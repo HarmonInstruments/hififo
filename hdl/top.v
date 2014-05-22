@@ -24,10 +24,7 @@ module vna_dsp
    wire 	m_axis_rx_tvalid;
       
    wire 	cfg_to_turnoff;
-   wire [7:0] 	cfg_bus_number;
-   wire [4:0] 	cfg_device_number;
-   wire [2:0] 	cfg_function_number;
-   wire [15:0] 	pcie_id = {cfg_bus_number, cfg_device_number, cfg_function_number};
+   wire [15:0] 	pcie_id;
    wire 	sys_rst_n_c;
    wire 	sys_clk;
    reg 		pcie_reset = 1'b1;
@@ -37,7 +34,7 @@ module vna_dsp
    IBUFDS_GTE2 refclk_ibuf (.O(sys_clk), .ODIV2(), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
 
    reg [23:0] 	rx_rid_tag = 0;
-   reg [7:0] 	rx_address = 0;
+   reg [12:0] 	rx_address = 0;
    reg 		read_valid = 0;
    reg 		write_valid = 0;
    reg [63:0] 	write_data = 0;
@@ -48,74 +45,106 @@ module vna_dsp
 	// fix this
    	cfg_turnoff_ok <= cfg_to_turnoff; // not if a completion is pending
 	if(write_valid)
-	  led[2:0] <= write_data[2:0];
-	if(s_axis_tx_tvalid & s_axis_tx_tready)
-	  led[3] <= 1'b1;
+	  led[3:0] <= write_data[3:0];
      end  
-   
-   
+  
    // state
    // 0 = 1st 2 DWORDs
    // 1 = 2nd 2 DWORDs
    // 2 = additional DWORDs
    // 3 = waiting for tlast
-   reg [1:0] 	    rx_state = 0;
-   reg [31:0] 	    rx_previous_dw = 0;
-   reg 		    rx_length_is_2 = 0;
-   reg 		    is_write_32 = 0;
-   reg 		    is_cpld = 0;
-   reg 		    is_read_32 = 0;
-
+   reg        rx_tvalid_q = 0;
+   reg [63:0] rx_tdata_q = 0;
+   reg [63:0] rx_tdata_q2 = 0;
+   reg 	      rx_tlast_q = 0;
+   reg [1:0]  rx_state = 0;
+   reg [31:0] rx_previous_dw = 0;
+   reg 	      rx_length_is_2 = 0;
+   reg 	      is_write_32 = 0;
+   reg 	      is_cpld = 0;
+   reg 	      is_read_32 = 0;
+   
+   reg [63:0] read_data = 0;
+   reg [63:0] ldata = 0;
+   // read data
+   always @ (posedge clock)
+     begin
+	if(write_valid)
+	  begin
+	     case(rx_address)
+	       0: ldata <= write_data;
+	     endcase // case (rx_address)
+	  end
+	if(read_valid)
+	  begin
+	     case(rx_address)
+	       0: read_data <= ldata;
+	       default: read_data <= {rx_address, 32'hDEADBEEF};
+	     endcase
+	  end
+     end
+   
    // receive
    always @ (posedge clock)
      begin
+	rx_tvalid_q <= m_axis_rx_tvalid;
+	rx_tlast_q <= m_axis_rx_tlast;
+	rx_tdata_q <= m_axis_rx_tdata;
 	if(rx_state == 0)
 	  begin
-	     is_write_32 <= m_axis_rx_tdata[30:24] == 7'b1000000;
-	     is_cpld <= m_axis_rx_tdata[30:24] == 7'b1001010;
-	     is_read_32 <= m_axis_rx_tdata[30:24] == 7'b0000000;
-	     rx_length_is_2 <= m_axis_rx_tdata[9:0] == 10'd2;
-	     rx_rid_tag <= m_axis_rx_tdata[63:40];
+	     is_write_32 <= rx_tdata_q[30:24] == 7'b1000000;
+	     is_cpld <= rx_tdata_q[30:24] == 7'b1001010;
+	     is_read_32 <= rx_tdata_q[30:24] == 7'b0000000;
+	     rx_length_is_2 <= rx_tdata_q[9:0] == 10'd2;
+	     rx_rid_tag <= rx_tdata_q[63:40];
 	  end
 	if(rx_state == 1)
 	  begin
-	     rx_address <= m_axis_rx_tdata[10:3];
+	     rx_address <= rx_tdata_q[15:3];
 	  end
-	if(m_axis_rx_tvalid)
+	if(rx_tvalid_q)
 	  begin
-	     write_data <= {m_axis_rx_tdata[31:0],rx_previous_dw};
-	     rx_previous_dw <= m_axis_rx_tdata[63:32];
+	     write_data[ 7:0 ] <= rx_previous_dw[31:24]; // endian nonsense
+	     write_data[15: 8] <= rx_previous_dw[23:16];
+	     write_data[23:16] <= rx_previous_dw[15: 8];
+	     write_data[31:24] <= rx_previous_dw[ 7: 0];
+	     write_data[39:32] <= rx_tdata_q[31:24];
+	     write_data[47:40] <= rx_tdata_q[23:16];
+	     write_data[55:48] <= rx_tdata_q[15: 8];
+	     write_data[63:56] <= rx_tdata_q[ 7: 0];
+	     rx_previous_dw <= rx_tdata_q[63:32];
 	  end
 	if(pcie_reset)
 	  begin
 	     rx_state <= 2'd0;
 	  end
-	else if(m_axis_rx_tvalid)
+	else if(rx_tvalid_q)
 	  begin
-	     if(m_axis_rx_tlast)
+	     if(rx_tlast_q)
 	       rx_state <= 2'd0;
 	     else if(rx_state == 0) // 1st 2 DWORDs of header
 	       rx_state <= 2'd1;
 	     else if(rx_state == 1) // last DWORD of header, data DW0 (if present)
 	       rx_state <= (is_write_32 | is_cpld) ? 2'd2 : 2'd3;
 	  end // if (tvalid)
-	write_valid <= (rx_state == 2) && m_axis_rx_tvalid;
-	read_valid <= rx_length_is_2 && is_read_32 && (rx_state == 1) && m_axis_rx_tvalid; // memory read(rx_last_qw[30:24] = 0), len(rx_last_qw[9:0]) = 2 DW
+	write_valid <= (rx_state == 2) && rx_tvalid_q;
+	read_valid <= rx_length_is_2 && is_read_32 && (rx_state == 1) && rx_tvalid_q; // memory read, len = 2 DW
 
      end // always @ (posedge clock)
 
    // transmit
    reg [1:0] tx_state = 0;
-      
+   reg 	     s_axis_tx_1dw = 0;
+
    always @(posedge clock)
      begin
 	s_axis_tx_tvalid <= tx_state != 0;
-	s_axis_tx_tkeep <= tx_state == 3 ? 8'h0F : 8'hFF;
+	s_axis_tx_1dw <= tx_state == 3;
 	s_axis_tx_tlast <= tx_state == 3;
 	case(tx_state)
-	  1: s_axis_tx_tdata <= { pcie_id, 16'd8, 32'h4A000002 };
-	  2: s_axis_tx_tdata <= { 32'hDEADBEEF, rx_rid_tag, 1'b0, rx_address[3:0], 3'd0 };
-	  3: s_axis_tx_tdata <= rx_address;
+	  1: s_axis_tx_tdata <= {pcie_id, 16'd8, 32'h4A000002}; // read completion, 2 DW
+	  2: s_axis_tx_tdata <= {read_data[7:0], read_data[15:8], read_data[23:16], read_data[31:24], rx_rid_tag, 1'b0, rx_address[3:0], 3'd0 };
+	  3: s_axis_tx_tdata <= {32'h0, read_data[39:32], read_data[47:40], read_data[55:48], read_data[63:56]};
 	  default: s_axis_tx_tdata <= 64'h0;
 	endcase
 	if(pcie_reset)
@@ -138,7 +167,7 @@ module vna_dsp
       .user_app_rdy(),
       .s_axis_tx_tready(s_axis_tx_tready),
       .s_axis_tx_tdata(s_axis_tx_tdata),
-      .s_axis_tx_tkeep(s_axis_tx_tkeep),
+      .s_axis_tx_tkeep(s_axis_tx_1dw ? 8'h0F : 8'hFF),
       .s_axis_tx_tuser(4'd0), // may want to assert 2 for cut through
       .s_axis_tx_tlast(s_axis_tx_tlast),
       .s_axis_tx_tvalid(s_axis_tx_tvalid),
@@ -163,13 +192,13 @@ module vna_dsp
       .fc_cpld(), .fc_cplh(), .fc_npd(), .fc_nph(),
       .fc_pd(), .fc_ph(), .fc_sel(3'd0),
       // configuration
-      .cfg_device_number(cfg_device_number),
       .cfg_dcommand2(), .cfg_pmcsr_pme_status(),
       .cfg_status(), .cfg_to_turnoff(cfg_to_turnoff),
       .cfg_received_func_lvl_rst(),
       .cfg_dcommand(),
-      .cfg_bus_number(cfg_bus_number),
-      .cfg_function_number(cfg_function_number),
+      .cfg_bus_number(pcie_id[15:8]),
+      .cfg_device_number(pcie_id[7:3]),      
+      .cfg_function_number(pcie_id[2:0]),
       .cfg_command(),
       .cfg_dstatus(),
       .cfg_lstatus(),
