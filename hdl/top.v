@@ -30,9 +30,10 @@ module vna_dsp
    IBUFDS_GTE2 refclk_ibuf (.O(sys_clk), .ODIV2(), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
 
    reg [23:0] 	rx_rid_tag = 0;
-   reg [13:0] 	rx_address = 0;
+   reg [12:0] 	rx_address = 0;
    reg 		read_valid = 0;
    reg 		write_valid = 0;
+   reg 		cpld_valid = 0;
    reg [63:0] 	write_data = 0;
    reg 		read_done = 0;
    
@@ -65,24 +66,33 @@ module vna_dsp
    reg [63:0] ldata = 0;
 
    reg 	      got_cpld = 0;
-   
+   reg [15:0] cpld_count = 0;
+   reg [15:0] write_count = 0;
+   reg [15:0] read_count = 0;
+      
    // read data
    always @ (posedge clock)
      begin
 	if(write_valid)
 	  begin
-	     case(rx_address)
-	       14'h0000: ldata <= write_data;
-	       14'h2000: ldata <= write_data;
-	     endcase // case (rx_address)
+	     if(rx_address == 13'h0000)
+	       ldata <= write_data;
 	  end
+	else if(cpld_valid)
+	  ldata <= write_data;
 	read_done <= read_valid;
 	got_cpld <= got_cpld | is_cpld;
+	cpld_count <= cpld_count + cpld_valid;
+	read_count <= read_count + read_valid;
+	write_count <= write_count + write_valid;
 	if(read_valid)
 	  begin
 	     case(rx_address)
 	       14'h0000: read_data <= ldata;
 	       14'h0001: read_data <= {3'd0,got_cpld};
+	       14'h0002: read_data <= cpld_count;
+	       14'h0003: read_data <= write_count;
+	       14'h0004: read_data <= read_count;
 	       default: read_data <= {rx_address, 32'hDEADBEEF};
 	     endcase
 	  end
@@ -104,7 +114,7 @@ module vna_dsp
 	  end
 	if(rx_state == 1)
 	  begin
-	     rx_address <= {is_cpld,rx_tdata_q[15:3]};
+	     rx_address <= {rx_tdata_q[15:3]};
 	  end
 	if(rx_tvalid_q)
 	  begin
@@ -131,8 +141,9 @@ module vna_dsp
 	     else if(rx_state == 1) // last DWORD of header, data DW0 (if present)
 	       rx_state <= (is_write_32 | is_cpld) ? 2'd2 : 2'd3;
 	  end // if (tvalid)
-	write_valid <= (rx_state == 2) && rx_tvalid_q;
+	write_valid <= is_write_32 && (rx_state == 2) && rx_tvalid_q;
 	read_valid <= rx_length_is_2 && is_read_32 && (rx_state == 1) && rx_tvalid_q; // memory read, len = 2 DW
+	cpld_valid <= is_cpld && (rx_state == 2) && rx_tvalid_q; // memory read, len = 2 DW
 
      end // always @ (posedge clock)
    

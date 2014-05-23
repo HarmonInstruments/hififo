@@ -40,13 +40,13 @@ module pcie_tx
    endian_swap endian_swap_rc3(.din(read_completion_data[31: 0]), .dout(read_completion_dw3));
    endian_swap endian_swap_rc4(.din(read_completion_data[63:32]), .dout(read_completion_dw4));
       
-   wire [31:0] 	     read_request_dw0 = {1'b0, 7'b0100000, 24'h64}; // 512 byte read request
+   wire [31:0] 	     read_request_dw0 = {1'b0, 7'b0100000, 24'd128}; // 512 byte read request
    wire [31:0] 	     read_request_dw1 = {pcie_id, read_request_tag, 8'hFF};
    wire [31:0] 	     read_request_dw2 = read_request_address[63:32];
    wire [31:0] 	     read_request_dw3 = read_request_address[31: 0];
 
    reg [3:0] 	     write_request_count = 0;
-   wire [31:0] 	     write_request_dw0 = {1'b0, 7'b1100000, 24'h16}; // 128 byte write request
+   wire [31:0] 	     write_request_dw0 = {1'b0, 7'b1100000, 24'd32}; // 128 byte write request
    wire [31:0] 	     write_request_dw1 = {pcie_id, 16'h00FF};
    wire [31:0] 	     write_request_dw4;
    wire [31:0] 	     write_request_dw5;
@@ -57,6 +57,7 @@ module pcie_tx
      begin
 	read_completion_ready <= tx_state == 3;
 	read_request_ready <= tx_state == 5;
+	write_request_ready <= write_request_count == 15;
 	write_request_accepted <= (tx_state == 8) && axis_tx_tready;
 	write_request_count <= tx_state == 8 ? write_request_count + axis_tx_tready : 1'b0;
 	axis_tx_tvalid <= tx_state != 0;
@@ -79,21 +80,24 @@ module pcie_tx
 	  begin
 	     if(read_completion_valid)
 	       tx_state <= 4'd1;
-	     else if(read_request_valid)
+	     else if(read_request_valid & ~read_request_ready)
 	       tx_state <= 4'd4;
-	     else if(write_request_valid)
+	     else if(write_request_valid & ~write_request_ready)
 	       tx_state <= 4'd6;
 	     else
 	       tx_state <= 4'd0;
 	  end
-	else if(tx_state == 3)
-	  tx_state <= 4'd0;
-	else if(tx_state == 5)
-	  tx_state <= 4'd0;
-	else if((tx_state == 8) && (write_request_count == 15))
-	  tx_state <= 4'd0;
-	else
-	  tx_state <= tx_state + axis_tx_tready;
+	else if(axis_tx_tready)
+	  begin
+	     if(tx_state == 3)
+	       tx_state <= 4'd0;
+	     else if(tx_state == 5)
+	       tx_state <= 4'd0;
+	     else if((tx_state == 8) && (write_request_count == 15))
+	       tx_state <= 4'd0;
+	     else
+	       tx_state <= tx_state + 1'b1;
+	  end
      end
    
 endmodule // pcie_tx
