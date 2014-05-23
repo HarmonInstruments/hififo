@@ -55,9 +55,9 @@ module pcie_tx
 
    always @(posedge clock)
      begin
-	read_completion_ready <= tx_state == 3;
-	read_request_ready <= tx_state == 5;
-	write_request_ready <= write_request_count == 15;
+	read_completion_ready <= axis_tx_tready && (tx_state == 3);
+	read_request_ready <= axis_tx_tready && (tx_state == 5);
+	write_request_ready <= axis_tx_tready && (write_request_count == 15);
 	write_request_accepted <= (tx_state == 8) && axis_tx_tready;
 	write_request_count <= tx_state == 8 ? write_request_count + axis_tx_tready : 1'b0;
 	axis_tx_tvalid <= tx_state != 0;
@@ -93,8 +93,8 @@ module pcie_tx
 	       tx_state <= 4'd0;
 	     else if(tx_state == 5)
 	       tx_state <= 4'd0;
-	     else if((tx_state == 8) && (write_request_count == 15))
-	       tx_state <= 4'd0;
+	     else if(tx_state == 8)
+	       tx_state <= (write_request_count == 15) ? 4'd0 : 4'd8;
 	     else
 	       tx_state <= tx_state + 1'b1;
 	  end
