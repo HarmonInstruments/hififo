@@ -13,12 +13,8 @@ module vna_dsp
    );
    
    wire 	clock;
-   wire 	user_reset, user_lnk_up;
-
-   wire [63:0] 	m_axis_rx_tdata;
-   wire 	m_axis_rx_tlast;
-   wire 	m_axis_rx_tvalid;
-      
+   wire 	user_reset;
+   wire 	user_lnk_up;
    wire 	cfg_to_turnoff;
    wire [15:0] 	pcie_id;
    wire 	sys_rst_n_c;
@@ -29,12 +25,12 @@ module vna_dsp
    IBUF   pci_reset_ibuf (.O(sys_rst_n_c), .I(sys_rst_n));
    IBUFDS_GTE2 refclk_ibuf (.O(sys_clk), .ODIV2(), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
 
-   reg [23:0] 	rx_rid_tag = 0;
-   reg [12:0] 	rx_address = 0;
-   reg 		read_valid = 0;
-   reg 		write_valid = 0;
-   reg 		cpld_valid = 0;
-   reg [63:0] 	write_data = 0;
+   wire [23:0] 	rx_rid_tag;
+   wire [12:0] 	rx_address;
+   wire 	read_valid;
+   wire 	write_valid;
+   wire 	completion_valid;
+   wire [63:0] 	write_data;
    reg 		read_done = 0;
    
    always @(posedge clock) 
@@ -45,27 +41,10 @@ module vna_dsp
 	if(write_valid)
 	  led[3:0] <= write_data[3:0];
      end  
-  
-   // state
-   // 0 = 1st 2 DWORDs
-   // 1 = 2nd 2 DWORDs
-   // 2 = additional DWORDs
-   // 3 = waiting for tlast
-   reg        rx_tvalid_q = 0;
-   reg [63:0] rx_tdata_q = 0;
-   reg [63:0] rx_tdata_q2 = 0;
-   reg 	      rx_tlast_q = 0;
-   reg [1:0]  rx_state = 0;
-   reg [31:0] rx_previous_dw = 0;
-   reg 	      rx_length_is_2 = 0;
-   reg 	      is_write_32 = 0;
-   reg 	      is_cpld = 0;
-   reg 	      is_read_32 = 0;
    
    reg [63:0] read_data = 0;
    reg [63:0] ldata = 0;
 
-   reg 	      got_cpld = 0;
    reg [15:0] cpld_count = 0;
    reg [15:0] write_count = 0;
    reg [15:0] read_count = 0;
@@ -78,75 +57,24 @@ module vna_dsp
 	     if(rx_address == 13'h0000)
 	       ldata <= write_data;
 	  end
-	else if(cpld_valid)
+	else if(completion_valid)
 	  ldata <= write_data;
 	read_done <= read_valid;
-	got_cpld <= got_cpld | is_cpld;
-	cpld_count <= cpld_count + cpld_valid;
+	cpld_count <= cpld_count + completion_valid;
 	read_count <= read_count + read_valid;
 	write_count <= write_count + write_valid;
 	if(read_valid)
 	  begin
 	     case(rx_address)
 	       14'h0000: read_data <= ldata;
-	       14'h0001: read_data <= {3'd0,got_cpld};
-	       14'h0002: read_data <= cpld_count;
-	       14'h0003: read_data <= write_count;
-	       14'h0004: read_data <= read_count;
+	       14'h0001: read_data <= cpld_count;
+	       14'h0002: read_data <= write_count;
+	       14'h0003: read_data <= read_count;
 	       default: read_data <= {rx_address, 32'hDEADBEEF};
 	     endcase
 	  end
      end
-   
-   // receive
-   always @ (posedge clock)
-     begin
-	rx_tvalid_q <= m_axis_rx_tvalid;
-	rx_tlast_q <= m_axis_rx_tlast;
-	rx_tdata_q <= m_axis_rx_tdata;
-	if(rx_state == 0)
-	  begin
-	     is_write_32 <= rx_tdata_q[30:24] == 7'b1000000;
-	     is_cpld <= rx_tdata_q[30:24] == 7'b1001010;
-	     is_read_32 <= rx_tdata_q[30:24] == 7'b0000000;
-	     rx_length_is_2 <= rx_tdata_q[9:0] == 10'd2;
-	     rx_rid_tag <= rx_tdata_q[63:40];
-	  end
-	if(rx_state == 1)
-	  begin
-	     rx_address <= {rx_tdata_q[15:3]};
-	  end
-	if(rx_tvalid_q)
-	  begin
-	     write_data[ 7:0 ] <= rx_previous_dw[31:24]; // endian nonsense
-	     write_data[15: 8] <= rx_previous_dw[23:16];
-	     write_data[23:16] <= rx_previous_dw[15: 8];
-	     write_data[31:24] <= rx_previous_dw[ 7: 0];
-	     write_data[39:32] <= rx_tdata_q[31:24];
-	     write_data[47:40] <= rx_tdata_q[23:16];
-	     write_data[55:48] <= rx_tdata_q[15: 8];
-	     write_data[63:56] <= rx_tdata_q[ 7: 0];
-	     rx_previous_dw <= rx_tdata_q[63:32];
-	  end
-	if(pcie_reset)
-	  begin
-	     rx_state <= 2'd0;
-	  end
-	else if(rx_tvalid_q)
-	  begin
-	     if(rx_tlast_q)
-	       rx_state <= 2'd0;
-	     else if(rx_state == 0) // 1st 2 DWORDs of header
-	       rx_state <= 2'd1;
-	     else if(rx_state == 1) // last DWORD of header, data DW0 (if present)
-	       rx_state <= (is_write_32 | is_cpld) ? 2'd2 : 2'd3;
-	  end // if (tvalid)
-	write_valid <= is_write_32 && (rx_state == 2) && rx_tvalid_q;
-	read_valid <= rx_length_is_2 && is_read_32 && (rx_state == 1) && rx_tvalid_q; // memory read, len = 2 DW
-	cpld_valid <= is_cpld && (rx_state == 2) && rx_tvalid_q; // memory read, len = 2 DW
-
-     end // always @ (posedge clock)
-   
+      
    reg          read_completion_valid = 0;
    reg [23:0] 	read_completion_rid_tag = 0;
    reg [3:0] 	read_completion_lower_addr = 0;
@@ -200,6 +128,26 @@ module vna_dsp
 	else if(read_request_ready)
 	  read_request_valid <= 1'b0;
      end
+
+   wire 	m_axis_rx_tvalid;
+   wire 	m_axis_rx_tlast;
+   wire [63:0] 	m_axis_rx_tdata;
+   
+   pcie_rx pcie_rx
+     (.clock(clock),
+      .reset(pcie_reset),
+      // outputs
+      .write_valid(write_valid),
+      .read_valid(read_valid),
+      .completion_valid(completion_valid),
+      .data(write_data),
+      .address(rx_address),
+      .rid_tag(rx_rid_tag),
+      // AXI stream from PCIE core
+      .tvalid(m_axis_rx_tvalid),
+      .tlast(m_axis_rx_tlast),
+      .tdata(m_axis_rx_tdata)
+      );		     
    
    wire 	s_axis_tx_tready;
    wire [63:0] 	s_axis_tx_tdata;
@@ -378,5 +326,5 @@ module vna_dsp
       .sys_clk                                    ( sys_clk ),
       .sys_rst_n                                  ( sys_rst_n_c )
       );      
-endmodule`timescale 1ns / 1ps
+endmodule
 
