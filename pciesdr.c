@@ -5,11 +5,12 @@
 #include <linux/delay.h>
 #include <asm/uaccess.h>
 #include <linux/sysfs.h>
+#include <linux/interrupt.h>
 
 #define VENDOR_ID 0x10EE
 #define DEVICE_ID 0x7024
 #define SUCCESS 0
-#define DEVICE_NAME "pciesdr"
+#define DEVICE_NAME "vna_dsp"
 
 static struct pci_device_id pciesdr_pci_table[] = {
   {VENDOR_ID, DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID, 0, 0 ,0},
@@ -63,6 +64,15 @@ static struct file_operations fops = {
  .release = pciesdr_release
 };
 
+static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
+  //struct sample_dev *dev = dev_id;
+  /* now `dev' points to the right hardware item */
+  /* .... */
+  printk("VNA interrupt\n");
+  return IRQ_HANDLED;
+}
+
+
 static int pciesdr_probe(struct pci_dev *dev, const struct pci_device_id *id){
   int i;
   int retval = pci_enable_device(dev);
@@ -75,6 +85,9 @@ static int pciesdr_probe(struct pci_dev *dev, const struct pci_device_id *id){
   pci_set_master  (dev);
   pci_set_dma_mask(dev, 0xFFFFFFFFFFFFFFFF); // if this fails, try 32
   pci_set_consistent_dma_mask(dev, 0xFFFFFFFFFFFFFFFF);
+  pci_enable_msi(dev); // check retval
+  if(request_irq(dev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, dev) != 0)
+    printk("VNA: request_irq() failed\n");
   pciesdr_buffer = (uint64_t *) pci_alloc_consistent(dev, 4*1024*1024, &dmahandle_buffer);
   if(pciesdr_buffer == NULL)
     printk("Failed to allocate rx buffer\n");
@@ -83,8 +96,6 @@ static int pciesdr_probe(struct pci_dev *dev, const struct pci_device_id *id){
   bar0base = (uint64_t *) ioremap(pci_resource_start(dev, 0), 65536);
   printk("pci_resource_start(dev, 0) = %llx\n", (uint64_t) pci_resource_start(dev, 0));
   printk("BAR 0 base (remapped) = %llx\n", (uint64_t) bar0base);
-  writeq(0x1FFFFFF233FFFFF4, &bar0base[15]);
-  
   writeq(0x0BADC0DE, &bar0base[1]);
   udelay(1000);
   for(i=0; i<15; i++)
@@ -124,6 +135,8 @@ static int pciesdr_probe(struct pci_dev *dev, const struct pci_device_id *id){
 
 static void pciesdr_remove(struct pci_dev *dev){
   iounmap(bar0base);
+  free_irq(dev->irq, dev); // void
+  pci_disable_msi(dev); // check retval?
   pci_free_consistent(dev, 4*1024*1024, pciesdr_buffer, dmahandle_buffer);
   pci_release_regions(dev);
   pci_disable_device(dev);
