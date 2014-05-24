@@ -5,7 +5,7 @@ update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
 create_ip -name pcie_7x -vendor xilinx.com -library ip -module_name pcie_7x_0
 
-set_property -dict [list CONFIG.Maximum_Link_Width {X4} CONFIG.Link_Speed {5.0_GT/s} CONFIG.Bar0_Size {64} CONFIG.Base_Class_Menu {Data_acquisition_and_signal_processing_controllers} CONFIG.Sub_Class_Interface_Menu {Other_data_acquisition/signal_processing_controllers} CONFIG.Max_Payload_Size {256_bytes} CONFIG.Buf_Opt_BMA {true} CONFIG.IntX_Generation {false} CONFIG.DSN_Enabled {false} CONFIG.en_ext_clk {false} CONFIG.mode_selection {Advanced}] [get_ips pcie_7x_0]
+set_property -dict [list CONFIG.Maximum_Link_Width {X4} CONFIG.Link_Speed {5.0_GT/s} CONFIG.Bar0_Size {64} CONFIG.Use_Class_Code_Lookup_Assistant {true} CONFIG.Base_Class_Menu {Data_acquisition_and_signal_processing_controllers} CONFIG.Sub_Class_Interface_Menu {Other_data_acquisition/signal_processing_controllers} CONFIG.Max_Payload_Size {128_bytes} CONFIG.Buf_Opt_BMA {true} CONFIG.IntX_Generation {false} CONFIG.DSN_Enabled {false} CONFIG.en_ext_clk {false} CONFIG.mode_selection {Advanced}] [get_ips pcie_7x_0]
 
 #generate_target {instantiation_template} [get_files /home/dlharmon/pcie3/pcie3.srcs/sources_1/ip/pcie_7x_0/pcie_7x_0.xci]
 generate_target all [get_files  /home/dlharmon/pcie3/xbuild/pcie3.srcs/sources_1/ip/pcie_7x_0/pcie_7x_0.xci]
