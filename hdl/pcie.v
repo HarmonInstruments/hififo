@@ -9,6 +9,11 @@ module pcie
    input 	    sys_clk_p,
    input 	    sys_clk_n,
    input 	    sys_rst_n,
+/*   output 	    pio_write_valid,
+   output 	    pio_read_valid,
+   output [63:0]    pio_write_data,
+   output [12:0]    pio_address,
+   input [63:0]     pio_read_data,*/
    output reg [3:0] led = 4'h5
    );
    
@@ -21,7 +26,9 @@ module pcie
    wire 	sys_clk;
    reg 		pcie_reset = 1'b1;
    reg 		cfg_turnoff_ok = 0;
-   
+   wire 	cfg_interrupt_rdy;
+   reg 		cfg_interrupt = 0;
+      
    IBUF   pci_reset_ibuf (.O(sys_rst_n_c), .I(sys_rst_n));
    IBUFDS_GTE2 refclk_ibuf (.O(sys_clk), .ODIV2(), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
 
@@ -59,6 +66,11 @@ module pcie
 	  end
 	else if(completion_valid)
 	  ldata <= write_data;
+	if(write_valid && (rx_address == 102))
+	  cfg_interrupt <= 1'b1;
+	else if(cfg_interrupt_rdy)
+	  cfg_interrupt <= 1'b0;
+	
 	read_done <= read_valid;
 	cpld_count <= cpld_count + completion_valid;
 	read_count <= read_count + read_valid;
@@ -286,8 +298,8 @@ module pcie
       .cfg_err_aer_headerlog(128'h0), .cfg_aer_interrupt_msgnum(5'h0),
       .cfg_err_aer_headerlog_set(), .cfg_aer_ecrc_check_en(), .cfg_aer_ecrc_gen_en(),
       
-      .cfg_interrupt(1'b0),
-      .cfg_interrupt_rdy(),
+      .cfg_interrupt(cfg_interrupt),
+      .cfg_interrupt_rdy(cfg_interrupt_rdy),
       .cfg_interrupt_assert(1'b0),
       .cfg_interrupt_di(8'h0),
       .cfg_interrupt_do(),
