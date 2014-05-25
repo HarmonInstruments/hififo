@@ -112,6 +112,7 @@ module pcie
    reg [63:0] write_request_data = 64'h20000;
    reg [63:0] write_request_address = 0;
    wire       write_request_ready;
+   wire       write_request_ack;
       
    always @ (posedge clock)
      begin
@@ -184,6 +185,7 @@ module pcie
       .write_request_data(write_request_data),
       .write_request_address(write_request_address),
       .write_request_ready(write_request_ready),
+      .write_request_ack(write_request_ack),
       // read request
       .read_request_valid(read_request_valid),
       .read_request_address(read_request_address),
