@@ -59,7 +59,7 @@ module pcie_tx
    always @(posedge clock)
      begin
 	read_request_is_32_bit <= read_request_address[63:32] == 0;
-	if(tx_state == 6)
+	if(write_request_valid)
 	  write_request_is_32_bit <= write_request_address[63:32] == 0;
 	read_completion_ready <= axis_tx_tready && (tx_state == 3);
 	read_request_ready <= axis_tx_tready && (tx_state == 5);
