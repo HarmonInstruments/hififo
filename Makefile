@@ -1,4 +1,4 @@
-top.bin: build.sh build.tcl hdl
+top.bin: build.sh init.tcl hdl
 	./build.sh
 load:
 	./jtag.py xbuild/pcie3.runs/impl_1/vna_dsp.bin
