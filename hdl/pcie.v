@@ -116,37 +116,6 @@ module pcie
 	  end
      end // always @ (posedge clock)
 
-   wire        write_request_valid;
-   wire [63:0] write_request_data;
-   wire [63:0] write_request_address;
-   wire        write_request_ready;
-   wire        write_request_ack;
-   
-   pcie_dma_write_fifo pcie_dma_write_fifo
-     (.clock(clock),
-      .reset(pcie_reset),
-      // PIO control
-      .pio_write_valid(write_valid),
-      .pio_write_address(rx_address),
-      .pio_write_data(write_data),
-      // status
-      .interrupt_match(write_fifo_interrupt_match),
-      .interrupt_fifo(write_fifo_interrupt_fifo),
-      .active(write_fifo_active),
-      .block_count(write_fifo_block_count), // [23:0] number of 128 byte blocks transmitted
-      // FIFO
-      .fifo_clock(clock),
-      .fifo_write_valid(write_valid && {rx_address[12:1], 1'b0} == 16),
-      .fifo_write_data({rx_address[0], write_data}), // bit 64 is end, 65 is interrupt
-      .fifo_ready(write_fifo_ready), // minimum 32 positions available
-      // interface to pcie_tx module
-      .write_request_valid(write_request_valid),
-      .write_request_data(write_request_data),
-      .write_request_address(write_request_address),
-      .write_request_ready(write_request_ready), // pulses 16 times to read request data
-      .write_request_ack(write_request_ack) // pulses high once to indicate the header is complete
-      );
-     
    reg        read_request_valid = 0;
    reg [63:0] read_request_address = 0;
    wire       read_request_ready;
@@ -187,23 +156,31 @@ module pcie
    wire [7:0] 	s_axis_tx_tkeep;
    wire 	s_axis_tx_tlast;
    wire 	s_axis_tx_tvalid;
-   
+
    pcie_tx pcie_tx
      (.clock(clock),
       .reset(pcie_reset),
       .pcie_id(pcie_id),
+      // PIO control
+      .pio_write_valid(write_valid),
+      .pio_write_address(rx_address),
+      .pio_write_data(write_data),
       // read completion
       .read_completion_valid(read_completion_valid),
       .read_completion_rid_tag(read_completion_rid_tag), // 24
       .read_completion_lower_addr(read_completion_lower_addr),// 4
       .read_completion_data(read_completion_data),
       .read_completion_ready(read_completion_ready),
-      // write
-      .write_request_valid(write_request_valid),
-      .write_request_data(write_request_data),
-      .write_request_address(write_request_address),
-      .write_request_ready(write_request_ready),
-      .write_request_ack(write_request_ack),
+      // status
+      .fifo_interrupt_match(write_fifo_interrupt_match),
+      .fifo_interrupt_flag(write_fifo_interrupt_fifo),
+      .fifo_active(write_fifo_active),
+      .fifo_block_count(write_fifo_block_count), // [23:0] number of 128 byte blocks transmitted
+      // FIFO
+      .fifo_clock(clock),
+      .fifo_write_valid(write_valid && {rx_address[12:1], 1'b0} == 16),
+      .fifo_write_data({rx_address[0], write_data}), // bit 64 is end, 65 is interrupt
+      .fifo_ready(write_fifo_ready), // minimum 32 positions available
       // read request
       .read_request_valid(read_request_valid),
       .read_request_address(read_request_address),
