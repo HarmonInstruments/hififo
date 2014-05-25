@@ -15,7 +15,7 @@ module pcie_tx
    input 	     write_request_valid,
    input [63:0]      write_request_data,
    input [63:0]      write_request_address,
-   output reg 	     write_request_ready = 0, // pulses high 16 times, once for each word, 1 clock early
+   output 	     write_request_ready, // pulses high 16 times, once for each word, 1 clock early
    // read request
    input 	     read_request_valid,
    input [63:0]      read_request_address,
@@ -51,11 +51,14 @@ module pcie_tx
    endian_swap endian_swap_wr4(.din(write_request_data[31: 0]), .dout(write_request_dw4));
    endian_swap endian_swap_wr5(.din(write_request_data[63:32]), .dout(write_request_dw5));
 
+   reg 		     write_request_ready_1 = 1'b0;
+   assign write_request_ready = write_request_ready_1 & axis_tx_tvalid;
+      
    always @(posedge clock)
      begin
 	read_completion_ready <= axis_tx_tready && (tx_state == 3);
 	read_request_ready <= axis_tx_tready && (tx_state == 5);
-	write_request_ready <= axis_tx_tready && (tx_state > 5) && (tx_state < 22);
+	write_request_ready_1 <= axis_tx_tready && (tx_state > 5) && (tx_state < 22);
 	axis_tx_tvalid <= tx_state != 0;
 	axis_tx_1dw <= tx_state == 3;
 	axis_tx_tlast <= (tx_state == 3) || (tx_state == 5) || (tx_state == 23);
