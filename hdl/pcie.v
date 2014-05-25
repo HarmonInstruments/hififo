@@ -55,7 +55,13 @@ module pcie
    reg [15:0] cpld_count = 0;
    reg [15:0] write_count = 0;
    reg [15:0] read_count = 0;
-      
+
+   wire        write_fifo_active;
+   wire        write_fifo_interrupt_match;
+   wire        write_fifo_interrupt_fifo;
+   wire [23:0] write_fifo_block_count;
+   wire        write_fifo_ready;
+
    // read data
    always @ (posedge clock)
      begin
@@ -82,6 +88,8 @@ module pcie
 	       14'h0001: read_data <= cpld_count;
 	       14'h0002: read_data <= write_count;
 	       14'h0003: read_data <= read_count;
+	       14'h0004: read_data <= {write_fifo_block_count, 7'd0};
+	       14'h0005: read_data <= {write_fifo_active, write_fifo_interrupt_match, write_fifo_interrupt_fifo, write_fifo_ready};
 	       default: read_data <= {rx_address, 32'hDEADBEEF};
 	     endcase
 	  end
@@ -108,27 +116,37 @@ module pcie
 	  end
      end // always @ (posedge clock)
 
-   reg        write_request_valid = 0;
-   reg [63:0] write_request_data = 64'h20000;
-   reg [63:0] write_request_address = 0;
-   wire       write_request_ready;
-   wire       write_request_ack;
-      
-   always @ (posedge clock)
-     begin
-	if(write_request_ready)
-	  begin
-	     write_request_data <= write_request_data + 1'b1;
-	  end
-	if(write_valid && (rx_address == 100))
-	  begin
-	     write_request_valid <= 1'b1;
-	     write_request_address <= write_data;
-	  end
-	else if(write_request_ready)
-	  write_request_valid <= 1'b0;
-     end // always @ (posedge clock)
-
+   wire        write_request_valid;
+   wire [63:0] write_request_data;
+   wire [63:0] write_request_address;
+   wire        write_request_ready;
+   wire        write_request_ack;
+   
+   pcie_dma_write_fifo pcie_dma_write_fifo
+     (.clock(clock),
+      .reset(pcie_reset),
+      // PIO control
+      .pio_write_valid(write_valid),
+      .pio_write_address(rx_address),
+      .pio_write_data(write_data),
+      // status
+      .interrupt_match(write_fifo_interrupt_match),
+      .interrupt_fifo(write_fifo_interrupt_fifo),
+      .active(write_fifo_active),
+      .block_count(write_fifo_block_count), // [23:0] number of 128 byte blocks transmitted
+      // FIFO
+      .fifo_clock(clock),
+      .fifo_write_valid(write_valid && {rx_address[12:1], 1'b0} == 16),
+      .fifo_write_data({rx_address[0], write_data}), // bit 64 is end, 65 is interrupt
+      .fifo_ready(write_fifo_ready), // minimum 32 positions available
+      // interface to pcie_tx module
+      .write_request_valid(write_request_valid),
+      .write_request_data(write_request_data),
+      .write_request_address(write_request_address),
+      .write_request_ready(write_request_ready), // pulses 16 times to read request data
+      .write_request_ack(write_request_ack) // pulses high once to indicate the header is complete
+      );
+     
    reg        read_request_valid = 0;
    reg [63:0] read_request_address = 0;
    wire       read_request_ready;
