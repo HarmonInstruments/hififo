@@ -64,7 +64,7 @@ module pcie_tx
 	fifo_enable <= pio_write_valid && (pio_write_address == 8);
 	fifo_disable <= pio_write_valid && (pio_write_address == 9);
 	if(pio_write_valid && (pio_write_address == 10))
-	  fifo_block_count_match <= pio_write_data[30:5];
+	  fifo_block_count_match <= pio_write_data[26:7];
 	fifo_active <= (fifo_disable || reset) ? 1'b0 : (fifo_active || fifo_enable);
 	fifo_ready <= ~fifo_almost_full;
 	fifo_block_count <= fifo_active ? fifo_block_count + fifo_block_done : 1'b0;

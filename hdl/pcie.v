@@ -57,40 +57,43 @@ module pcie
    reg [15:0] read_count = 0;
 
    wire        write_fifo_active;
-   wire        write_fifo_interrupt_match;
-   wire        write_fifo_interrupt_fifo;
-   wire [23:0] write_fifo_block_count;
+   wire [19:0] write_fifo_block_count;
    wire        write_fifo_ready;
 
-   // read data
+   reg [1:0]   interrupt_latch = 0;
+   reg [1:0]   interrupt_enable = 0;
+   wire [1:0]  interrupt;
+   
+   // PIO control
    always @ (posedge clock)
      begin
 	if(write_valid)
 	  begin
-	     if(rx_address == 13'h0000)
-	       ldata <= write_data;
+	     case(rx_address)
+	       0: interrupt_enable <= write_data[1:0];
+	     endcase
 	  end
-	else if(completion_valid)
+	if(completion_valid)
 	  ldata <= write_data;
-	if(write_valid && (rx_address == 102))
+	if((interrupt & interrupt_enable) != 0)
 	  cfg_interrupt <= 1'b1;
 	else if(cfg_interrupt_rdy)
 	  cfg_interrupt <= 1'b0;
-	
+
 	read_done <= read_valid;
 	cpld_count <= cpld_count + completion_valid;
 	read_count <= read_count + read_valid;
 	write_count <= write_count + write_valid;
+	interrupt_latch <= (read_valid && rx_address == 0) ? 1'b0 : interrupt_latch | interrupt;
 	if(read_valid)
 	  begin
 	     case(rx_address)
-	       14'h0000: read_data <= ldata;
-	       14'h0001: read_data <= cpld_count;
-	       14'h0002: read_data <= write_count;
-	       14'h0003: read_data <= read_count;
-	       14'h0004: read_data <= {write_fifo_block_count, 7'd0};
-	       14'h0005: read_data <= {write_fifo_active, write_fifo_interrupt_match, write_fifo_interrupt_fifo, write_fifo_ready};
-	       default: read_data <= {rx_address, 32'hDEADBEEF};
+	       14'h0000: read_data <= {write_fifo_active, 6'd0, interrupt_latch};
+	       14'h0002: read_data <= {cpld_count, write_count, read_count};
+	       14'h0003: read_data <= {write_fifo_block_count, 7'd0};
+	       14'h0006: read_data <= {write_fifo_ready};
+	       14'h0007: read_data <= ldata;
+	       default: read_data <= 64'h0;
 	     endcase
 	  end
      end
@@ -172,10 +175,10 @@ module pcie
       .read_completion_data(read_completion_data),
       .read_completion_ready(read_completion_ready),
       // status
-      .fifo_interrupt_match(write_fifo_interrupt_match),
-      .fifo_interrupt_flag(write_fifo_interrupt_fifo),
+      .fifo_interrupt_match(interrupt[1]),
+      .fifo_interrupt_flag(interrupt[0]),
       .fifo_active(write_fifo_active),
-      .fifo_block_count(write_fifo_block_count), // [23:0] number of 128 byte blocks transmitted
+      .fifo_block_count(write_fifo_block_count), // [19:0] number of 128 byte blocks transmitted
       // FIFO
       .fifo_clock(clock),
       .fifo_write_valid(write_valid && {rx_address[12:1], 1'b0} == 16),
