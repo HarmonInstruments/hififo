@@ -15,8 +15,7 @@ module pcie_tx
    input 	     write_request_valid,
    input [63:0]      write_request_data,
    input [63:0]      write_request_address,
-   output reg 	     write_request_accepted = 0,
-   output reg 	     write_request_ready = 0,
+   output reg 	     write_request_ready = 0, // pulses high 16 times, once for each word, 1 clock early
    // read request
    input 	     read_request_valid,
    input [63:0]      read_request_address,
@@ -30,8 +29,8 @@ module pcie_tx
    output reg 	     axis_tx_tvalid = 0
    );
 
-   reg [3:0] 	     tx_state = 0;
-      
+   reg [5:0] 	     tx_state = 0;
+   
    wire [31:0] 	     read_completion_dw0 = 32'h4A000002; // 2 DW
    wire [31:0] 	     read_completion_dw1 = {pcie_id, 16'd8}; // 8 bytes
    wire [31:0] 	     read_completion_dw2 = {read_completion_rid_tag, 1'b0, read_completion_lower_addr, 3'd0 };
@@ -45,7 +44,6 @@ module pcie_tx
    wire [31:0] 	     read_request_dw2 = read_request_address[63:32];
    wire [31:0] 	     read_request_dw3 = read_request_address[31: 0];
 
-   reg [3:0] 	     write_request_count = 0;
    wire [31:0] 	     write_request_dw0 = {1'b0, 7'b1100000, 24'd32}; // 128 byte write request
    wire [31:0] 	     write_request_dw1 = {pcie_id, 16'h00FF};
    wire [31:0] 	     write_request_dw4;
@@ -57,13 +55,12 @@ module pcie_tx
      begin
 	read_completion_ready <= axis_tx_tready && (tx_state == 3);
 	read_request_ready <= axis_tx_tready && (tx_state == 5);
-	write_request_ready <= axis_tx_tready && (write_request_count == 15);
-	write_request_accepted <= (tx_state == 8) && axis_tx_tready;
-	write_request_count <= tx_state == 8 ? write_request_count + axis_tx_tready : 1'b0;
+	write_request_ready <= axis_tx_tready && (tx_state > 5) && (tx_state < 22);
 	axis_tx_tvalid <= tx_state != 0;
 	axis_tx_1dw <= tx_state == 3;
-	axis_tx_tlast <= (tx_state == 3) || (tx_state == 5) || (write_request_count == 15);
+	axis_tx_tlast <= (tx_state == 3) || (tx_state == 5) || (tx_state == 23);
 	case(tx_state)
+	  0: axis_tx_tdata <= 64'h0;
 	  1: axis_tx_tdata <= {read_completion_dw1, read_completion_dw0};
 	  2: axis_tx_tdata <= {read_completion_dw3, read_completion_dw2};
 	  3: axis_tx_tdata <= {32'h0,               read_completion_dw4};
@@ -71,30 +68,25 @@ module pcie_tx
 	  5: axis_tx_tdata <= {read_request_dw3, read_request_dw2};
 	  6: axis_tx_tdata <= {write_request_dw1, write_request_dw0};
 	  7: axis_tx_tdata <= {write_request_address[31:0], write_request_address[63:32]};
-	  8: axis_tx_tdata <= {write_request_dw5, write_request_dw4};
-	  default: axis_tx_tdata <= 64'h0;
+	  default: axis_tx_tdata <= {write_request_dw5, write_request_dw4};
 	endcase
 	if(reset)
-	  tx_state <= 4'd0;
+	  tx_state <= 5'd0;
 	else if(tx_state == 0)
 	  begin
-	     if(read_completion_valid)
-	       tx_state <= 4'd1;
+	     if(read_completion_valid & ~read_completion_ready)
+	       tx_state <= 5'd1;
 	     else if(read_request_valid & ~read_request_ready)
-	       tx_state <= 4'd4;
-	     else if(write_request_valid & ~write_request_ready)
-	       tx_state <= 4'd6;
+	       tx_state <= 5'd4;
+	     else if(write_request_valid)
+	       tx_state <= 5'd6;
 	     else
-	       tx_state <= 4'd0;
+	       tx_state <= 5'd0;
 	  end
 	else if(axis_tx_tready)
 	  begin
-	     if(tx_state == 3)
-	       tx_state <= 4'd0;
-	     else if(tx_state == 5)
-	       tx_state <= 4'd0;
-	     else if(tx_state == 8)
-	       tx_state <= (write_request_count == 15) ? 4'd0 : 4'd8;
+	     if(tx_state == 3 || tx_state == 5 || tx_state == 23)
+	       tx_state <= 5'd0;
 	     else
 	       tx_state <= tx_state + 1'b1;
 	  end

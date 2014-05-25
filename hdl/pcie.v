@@ -110,13 +110,19 @@ module pcie
 
    reg        write_request_valid = 0;
    reg [63:0] write_request_data = 64'h100;
+   reg [63:0] write_request_data_q1 = 64'h100;
+   reg [63:0] write_request_data_q2 = 64'h100;
    reg [63:0] write_request_address = 0;
-   wire       write_request_accepted;
    wire       write_request_ready;
-
+      
    always @ (posedge clock)
      begin
-	write_request_data <= write_request_data + write_request_accepted;
+	if(write_request_ready)
+	  begin
+	     write_request_data_q2 <= write_request_data_q2 + 1'b1;
+	     write_request_data_q1 <= write_request_data_q2;
+	     write_request_data <= write_request_data_q1;
+	  end
 	if(write_valid && (rx_address == 100))
 	  begin
 	     write_request_valid <= 1'b1;
@@ -181,7 +187,6 @@ module pcie
       .write_request_valid(write_request_valid),
       .write_request_data(write_request_data),
       .write_request_address(write_request_address),
-      .write_request_accepted(write_request_accepted),
       .write_request_ready(write_request_ready),
       // read request
       .read_request_valid(read_request_valid),
