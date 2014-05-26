@@ -37,7 +37,8 @@ module pcie_tx
    );
 
    reg [5:0] 	     tx_state = 0;
-
+   wire 	     data_not_accepted = axis_tx_tvalid & ~axis_tx_tready;
+   
    wire 	     fifo_almost_full;
    wire 	     fifo_almost_empty;
    wire [64:0] 	     fifo_dout;
@@ -46,8 +47,8 @@ module pcie_tx
    reg [19:0] 	     fifo_block_count_match;
    reg [41:0] 	     fifo_page_table[0:31];
    reg [41:0] 	     fifo_page_table_oreg;
-   wire 	     fifo_read = axis_tx_tready && (tx_state > 5) && (tx_state < 22); // pulses high 16 times, once for each word, 1 clock early
-   wire 	     fifo_block_done = (tx_state == 23) && axis_tx_tready;
+   wire 	     fifo_read = ~data_not_accepted && (tx_state > 5) && (tx_state < 22); // pulses high 16 times, once for each word, 1 clock early
+   wire 	     fifo_block_done = (tx_state == 23) && ~data_not_accepted;
    wire [63:0] 	     write_request_address = {fifo_page_table_oreg, fifo_block_count[14:0], 7'd0};
    wire 	     write_request_is_32_bit = write_request_address[63:32] == 0;
    reg 		     write_request_valid;
@@ -71,7 +72,7 @@ module pcie_tx
 	fifo_page_table_oreg <= fifo_page_table[fifo_block_count[19:15]];
 	fifo_interrupt_match <= (fifo_block_count == fifo_block_count_match) && fifo_block_done;
 	fifo_interrupt_flag <= fifo_dout[64] && fifo_read;
-	if(axis_tx_tready)
+	if(~data_not_accepted)
 	  write_request_data_q <= write_request_data_swapped;
 	if(fifo_read)
 	  write_request_data <= fifo_dout[63:0];
@@ -88,7 +89,6 @@ module pcie_tx
 
    reg 		     read_requested = 0;
    reg 		     completion_requested = 0;
-   wire 	     data_not_accepted = axis_tx_tvalid & ~axis_tx_tready;
    
    always @(posedge clock)
      begin

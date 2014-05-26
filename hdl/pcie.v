@@ -60,13 +60,30 @@ module pcie
    wire [19:0] write_fifo_block_count;
 
    wire        write_fifo_ready;
-   wire        write_fifo_write = write_valid && {rx_address[12:1], 1'b0} == 16;
-   wire [64:0] write_fifo_data = {rx_address[0], write_data};// bit 64 is end, 65 is interrupt
-   
+   reg 	       write_fifo_write = 0;
+   reg [64:0]  write_fifo_data = 0;
 
-   wire        read_fifo_read = (rx_address == 4) && read_valid;
+   reg 	       read_fifo_read = 0;
    wire [63:0] read_fifo_data;
    wire        read_fifo_ready;
+
+   reg [3:0]   no_read = 0;
+   
+
+   always @ (posedge clock)
+     begin
+	if(read_fifo_ready && write_fifo_ready)
+	  begin
+	     read_fifo_read <= 1'b1;
+	     write_fifo_write <= 1'b1;
+	     write_fifo_data <= {read_fifo_data[63:60] == 1, read_fifo_data};
+	  end
+	else
+	  begin
+	     read_fifo_read <= 1'b0;
+	     write_fifo_write <= 1'b0;
+	  end
+     end
    
    wire        read_fifo_active;
    wire [17:0] read_fifo_block_count;
@@ -101,7 +118,8 @@ module pcie
 	       14'h0000: read_data <= {read_fifo_active, write_fifo_active, 4'd0, interrupt_latch};
 	       14'h0002: read_data <= {cpld_count, write_count, read_count};
 	       14'h0003: read_data <= {write_fifo_block_count, 7'd0};
-	       4: read_data <= read_fifo_data;
+	       14'h0004: read_data <= {read_fifo_block_count, 9'd0};
+	       //4: read_data <= read_fifo_data;
 	       14'h0006: read_data <= {read_fifo_ready, write_fifo_ready};
 	       14'h0007: read_data <= ldata;
 	       default: read_data <= 64'h0;
