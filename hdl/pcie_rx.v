@@ -34,21 +34,23 @@ module pcie_rx
 	tvalid_q <= tvalid;
 	tlast_q <= tlast;
 	tdata_q <= tdata;
-	data[15: 0] <= {previous_dw[23:16], previous_dw[31:24]}; // endian swap
-	data[31:16] <= {previous_dw[ 7: 0], previous_dw[15: 8]};
-	data[47:32] <= {tdata_q[23:16], tdata_q[31:24]};
-	data[63:48] <= {tdata_q[ 7: 0], tdata_q[15: 8]};
 	if(tvalid_q)
-	  previous_dw <= tdata_q[63:32];
-	if(wait_dw01)
 	  begin
-	     is_write_32 <= tdata_q[30:24] == 7'b1000000;
-	     is_cpld <= tdata_q[30:24] == 7'b1001010;
-	     is_read_32_2dw <= (tdata_q[30:24] == 7'b0000000) && (tdata_q[9:0] == 10'd2);
-	     rid_tag <= tdata_q[63:40];
+	     data[15: 0] <= {previous_dw[23:16], previous_dw[31:24]}; // endian swap
+	     data[31:16] <= {previous_dw[ 7: 0], previous_dw[15: 8]};
+	     data[47:32] <= {tdata_q[23:16], tdata_q[31:24]};
+	     data[63:48] <= {tdata_q[ 7: 0], tdata_q[15: 8]};
+	     previous_dw <= tdata_q[63:32];
+	     if(wait_dw01)
+	       begin
+		  is_write_32 <= tdata_q[30:24] == 7'b1000000;
+		  is_cpld <= tdata_q[30:24] == 7'b1001010;
+		  is_read_32_2dw <= (tdata_q[30:24] == 7'b0000000) && (tdata_q[9:0] == 10'd2);
+		  rid_tag <= tdata_q[63:40];
+	       end
+	     if(wait_dw23)
+	       address <= tdata_q[15:3];
 	  end
-	if(wait_dw23)
-	  address <= tdata_q[15:3];
 	if(reset || (tvalid_q && tlast_q))
 	  {wait_dw45, wait_dw23, wait_dw01} <= 3'b001;
 	else if(tvalid_q & wait_dw01)

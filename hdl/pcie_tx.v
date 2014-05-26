@@ -52,12 +52,11 @@ module pcie_tx
    wire [63:0] 	     write_request_address = {fifo_page_table_oreg, fifo_block_count[14:0], 7'd0};
    wire 	     write_request_is_32_bit = write_request_address[63:32] == 0;
    reg 		     write_request_valid;
-   reg [63:0] 	     write_request_data;
    wire [63:0] 	     write_request_data_swapped;
    reg [63:0] 	     write_request_data_q;
    
-   endian_swap endian_swap_wr4(.din(write_request_data[31: 0]), .dout(write_request_data_swapped[31: 0]));
-   endian_swap endian_swap_wr5(.din(write_request_data[63:32]), .dout(write_request_data_swapped[63:32]));
+   endian_swap endian_swap_wr4(.din(fifo_dout[31: 0]), .dout(write_request_data_swapped[31: 0]));
+   endian_swap endian_swap_wr5(.din(fifo_dout[63:32]), .dout(write_request_data_swapped[63:32]));
    always @ (posedge clock)
      begin
 	fifo_enable <= pio_write_valid && (pio_write_address == 8);
@@ -72,10 +71,6 @@ module pcie_tx
 	fifo_page_table_oreg <= fifo_page_table[fifo_block_count[19:15]];
 	fifo_interrupt_match <= (fifo_block_count == fifo_block_count_match) && fifo_block_done;
 	fifo_interrupt_flag <= fifo_dout[64] && fifo_read;
-	if(~data_not_accepted)
-	  write_request_data_q <= write_request_data_swapped;
-	if(fifo_read)
-	  write_request_data <= fifo_dout[63:0];
      end
    
    wire [31:0] 	     read_completion_dw3;
@@ -105,6 +100,7 @@ module pcie_tx
 	
 	if(~data_not_accepted)
 	  begin
+	     write_request_data_q <= write_request_data_swapped;
 	     axis_tx_tvalid <= tx_state != 0;
 	     axis_tx_1dw <= (tx_state == 3) || ((tx_state == 5) && read_request_is_32_bit) || ((tx_state == 23) && write_request_is_32_bit);
 	     axis_tx_tlast <= (tx_state == 3) || (tx_state == 5) || (tx_state == 23);
@@ -148,7 +144,7 @@ module pcie_tx
        .DATA_WIDTH(65),
        .DEVICE("7SERIES"),
        .FIFO_SIZE ("36Kb"), // "18Kb" or "36Kb"
-       .FIRST_WORD_FALL_THROUGH ("TRUE")
+       .FIRST_WORD_FALL_THROUGH ("FALSE")
        )
    fifo_dma_write
      (.ALMOSTEMPTY(fifo_almost_empty),

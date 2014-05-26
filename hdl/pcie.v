@@ -63,24 +63,28 @@ module pcie
    reg 	       write_fifo_write = 0;
    reg [64:0]  write_fifo_data = 0;
 
-   reg 	       read_fifo_read = 0;
+   wire        read_fifo_read = 1'b1;
+//(read_fifo_ready && write_fifo_ready);
+   wire        read_fifo_empty;
+   
    wire [63:0] read_fifo_data;
    wire        read_fifo_ready;
 
    reg [3:0]   no_read = 0;
+   //reg [31:0]  trans_count = 0;
    
-
    always @ (posedge clock)
      begin
-	if(read_fifo_ready && write_fifo_ready)
+	if(~read_fifo_empty)//read_fifo_ready && write_fifo_ready)
 	  begin
-	     read_fifo_read <= 1'b1;
+	     //read_fifo_read <= 1'b1;
 	     write_fifo_write <= 1'b1;
-	     write_fifo_data <= {read_fifo_data[63:60] == 1, read_fifo_data};
+	     write_fifo_data <= {read_fifo_data[63:60] == 1, read_fifo_data[63:0]};
+	     //trans_count <= trans_count + 1'b1;
 	  end
 	else
 	  begin
-	     read_fifo_read <= 1'b0;
+	     //read_fifo_read <= 1'b0;
 	     write_fifo_write <= 1'b0;
 	  end
      end
@@ -170,6 +174,7 @@ module pcie
       .fifo_clock(clock),
       .fifo_read(read_fifo_read),
       .fifo_read_data(read_fifo_data),
+      .fifo_empty(read_fifo_empty),
       .fifo_ready(read_fifo_ready) // minimum 32 positions available
       );
    
