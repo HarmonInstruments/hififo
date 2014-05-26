@@ -80,6 +80,24 @@ static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   return IRQ_HANDLED;
 }
 
+static void check_buffer(void)
+{
+  int i;
+  uint64_t prev = 0;
+  uint64_t cur;
+  int printcount = 0;
+  for(i=0; i<512*1024; i++){
+    cur = readq(&buffer_in[0][i]);
+    if(cur != prev + 1){
+      if(printcount < 200)
+	printk("buf_in[%d] = %llx\n", i, (uint64_t) cur);
+      printcount++;
+    }
+    prev = cur;
+  }
+  printk("found %d errors\n", printcount);
+}
+
 static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
   int i, j;
   int retval = pci_enable_device(dev);
@@ -92,7 +110,7 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
   printk("Found Harmon Instruments PCI Express interface board\n");
 
   pci_set_master  (dev);
-  pci_set_dma_mask(dev, 0xFFFFFFFFFFFFFFFF); // if this fails, try 32
+  pci_set_dma_mask(dev, 0xFFFFFFFFFFFFFFFF);
   pci_set_consistent_dma_mask(dev, 0xFFFFFFFFFFFFFFFF);
 
   //pci_set_dma_mask(dev, 0xFFFFFFFF); // if this fails, try 32
@@ -105,7 +123,7 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
       printk("Failed to allocate out buffer %d\n", i);
     else{
       for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
-	buffer_out[i][j] = 0xDEADBEEF00000000 + j + i*512*1024;
+	buffer_out[i][j] = j + i*512*1024;
     }
   }
   for(i=0; i<BUFFER_PAGES_IN; i++){
@@ -115,7 +133,7 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
       printk("Failed to allocate in buffer %d\n", i);
     else{
       for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
-	buffer_in[i][j] = 0xDEADBEEF0BADC0DE;
+	buffer_in[i][j] = 0xAAAAAAAA + j << 32;
     }
   }
 
@@ -134,14 +152,14 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
   // set in match
   writeq(0x1000 >> 2, &bar0base[10]);
   // set out match
-  writeq(4096, &bar0base[13]); 
+  writeq(256*1024, &bar0base[13]); 
   // enable interrupts
   writeq(0xF, &bar0base[0]);
   writeq(0, &bar0base[12]);
   // load the page tables
   for(i=0; i<32; i++){
-    writeq(buffer_out_dma_addr[0/*i%BUFFER_PAGES_OUT*/], &bar0base[i+512]);
-    writeq(buffer_in_dma_addr[0/*i%BUFFER_PAGES_IN*/], &bar0base[i+64]);
+    writeq(buffer_in_dma_addr[i%BUFFER_PAGES_IN], &bar0base[i+512]);
+    writeq(buffer_out_dma_addr[i%BUFFER_PAGES_OUT], &bar0base[i+64]);
   }
   for(i=0; i<8; i++)
     printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&bar0base[i]));
@@ -161,12 +179,15 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
     printk("buf_out[%d] = %llx\n", i, (uint64_t) readq(&buffer_out[0][i]));
   
   buffer_out[0][0] = 0x1EADBEEF00000000;
-  writeq(8192, &bar0base[11]); // enable
+  writeq(4*1024*1024, &bar0base[11]); // enable
   udelay(1000);
+  for(i=0; i<32; i++)
+    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&bar0base[i]));
   for(i=0; i<64; i++)
     printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&buffer_in[0][i]));
-  for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&bar0base[i]));
+  udelay(10000);
+  printk("check buf 2\n");
+  check_buffer();
   return 0;
 }
 
