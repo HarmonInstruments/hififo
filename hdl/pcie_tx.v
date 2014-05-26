@@ -14,7 +14,6 @@ module pcie_tx
    input [23:0]      read_completion_rid_tag,
    input [3:0] 	     read_completion_lower_addr,
    input [63:0]      read_completion_data,
-   output reg 	     read_completion_ready = 0,
    // status
    output reg 	     fifo_interrupt_match = 0,
    output reg 	     fifo_interrupt_flag = 0,
@@ -88,6 +87,7 @@ module pcie_tx
    wire [31:0] 	     read_request_dw2 = read_request_is_32_bit ? read_request_address[31:0] : read_request_address[63:32];
 
    reg 		     read_requested = 0;
+   reg 		     completion_requested = 0;
    
    always @(posedge clock)
      begin
@@ -95,8 +95,12 @@ module pcie_tx
 	  read_requested <= 1'b1;
 	else if(tx_state == 4)
 	  read_requested <= 1'b0;
+	if(read_completion_valid)
+	  completion_requested <= 1'b1;
+	else if(tx_state == 1)
+	  completion_requested <= 1'b0;
+	
 	read_request_is_32_bit <= read_request_address[63:32] == 0;
-	read_completion_ready <= axis_tx_tready && (tx_state == 3);
 	axis_tx_tvalid <= tx_state != 0;
 	axis_tx_1dw <= (tx_state == 3) || ((tx_state == 5) && read_request_is_32_bit) || ((tx_state == 23) && write_request_is_32_bit);
 	axis_tx_tlast <= (tx_state == 3) || (tx_state == 5) || (tx_state == 23);
@@ -115,7 +119,7 @@ module pcie_tx
 	  tx_state <= 5'd0;
 	else if(tx_state == 0)
 	  begin
-	     if(read_completion_valid & ~read_completion_ready)
+	     if(completion_requested)
 	       tx_state <= 5'd1;
 	     else if(read_requested)
 	       tx_state <= 5'd4;

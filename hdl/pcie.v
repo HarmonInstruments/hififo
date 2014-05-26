@@ -91,7 +91,6 @@ module pcie
 	else if(cfg_interrupt_rdy)
 	  cfg_interrupt <= 1'b0;
 
-	read_done <= read_valid;
 	cpld_count <= cpld_count + completion_valid;
 	read_count <= read_count + read_valid;
 	write_count <= write_count + write_valid;
@@ -114,21 +113,18 @@ module pcie
    reg [23:0] 	read_completion_rid_tag = 0;
    reg [3:0] 	read_completion_lower_addr = 0;
    reg [63:0] 	read_completion_data = 0;
-   wire 	read_completion_ready;
 
    always @(posedge clock)
      begin
-	if(read_done)
+	if(read_valid)
 	  begin
-	     read_completion_valid <= 1'b1;
 	     read_completion_rid_tag <= rx_rid_tag;
 	     read_completion_lower_addr <= rx_address[3:0];
-	     read_completion_data <= read_data;
 	  end
-	else if(read_completion_ready)
-	  begin
-	     read_completion_valid <= 1'b0;
-	  end
+	read_done <= read_valid;
+	read_completion_valid <= read_done;
+	if(read_done)
+	  read_completion_data <= read_data;
      end // always @ (posedge clock)
 
    wire        read_request_valid;
@@ -198,7 +194,6 @@ module pcie
       .read_completion_rid_tag(read_completion_rid_tag), // 24
       .read_completion_lower_addr(read_completion_lower_addr),// 4
       .read_completion_data(read_completion_data),
-      .read_completion_ready(read_completion_ready),
       // status
       .fifo_interrupt_match(interrupt[1]),
       .fifo_interrupt_flag(interrupt[0]),
