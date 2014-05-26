@@ -29,7 +29,6 @@ module pcie_tx
    input 	     read_request_valid,
    input [63:0]      read_request_address,
    input [7:0] 	     read_request_tag,
-   output reg 	     read_request_ready = 0,
    // AXI stream to PCI Express core
    input 	     axis_tx_tready,
    output reg [63:0] axis_tx_tdata = 0,
@@ -87,12 +86,17 @@ module pcie_tx
    reg 		     read_request_is_32_bit = 0;
    wire [31:0] 	     read_request_dw0 = read_request_is_32_bit ? {1'b0, 7'b0000000, 24'd128} : {1'b0, 7'b0100000, 24'd128}; // 512 byte read request
    wire [31:0] 	     read_request_dw2 = read_request_is_32_bit ? read_request_address[31:0] : read_request_address[63:32];
-       
+
+   reg 		     read_requested = 0;
+   
    always @(posedge clock)
      begin
+	if(read_request_valid)
+	  read_requested <= 1'b1;
+	else if(tx_state == 4)
+	  read_requested <= 1'b0;
 	read_request_is_32_bit <= read_request_address[63:32] == 0;
 	read_completion_ready <= axis_tx_tready && (tx_state == 3);
-	read_request_ready <= axis_tx_tready && (tx_state == 5);
 	axis_tx_tvalid <= tx_state != 0;
 	axis_tx_1dw <= (tx_state == 3) || ((tx_state == 5) && read_request_is_32_bit) || ((tx_state == 23) && write_request_is_32_bit);
 	axis_tx_tlast <= (tx_state == 3) || (tx_state == 5) || (tx_state == 23);
@@ -113,7 +117,7 @@ module pcie_tx
 	  begin
 	     if(read_completion_valid & ~read_completion_ready)
 	       tx_state <= 5'd1;
-	     else if(read_request_valid & ~read_request_ready)
+	     else if(read_requested)
 	       tx_state <= 5'd4;
 	     else if(~fifo_almost_empty & fifo_active)
 	       tx_state <= 5'd6;
