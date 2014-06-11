@@ -16,14 +16,13 @@ module pcie_tx
    input [63:0]      read_completion_data,
    // status
    output reg 	     fifo_interrupt_match = 0,
-   output reg 	     fifo_interrupt_flag = 0,
    output reg 	     fifo_active = 0,
    output reg [19:0] fifo_block_count, // number of 128 byte blocks transmitted
    // FIFO
    input 	     fifo_clock, // for all FIFO signals
    input 	     fifo_write_valid,
-   input [64:0]      fifo_write_data, // bit 64 is end, 65 is interrupt
-   output reg 	     fifo_ready, // minimum 32 positions available
+   input [63:0]      fifo_write_data,
+   output 	     fifo_almost_full,
    // read request
    input 	     read_request_valid,
    input [63:0]      read_request_address,
@@ -39,9 +38,8 @@ module pcie_tx
    reg [5:0] 	     tx_state = 0;
    wire 	     data_not_accepted = axis_tx_tvalid & ~axis_tx_tready;
    
-   wire 	     fifo_almost_full;
    wire 	     fifo_almost_empty;
-   wire [64:0] 	     fifo_dout;
+   wire [63:0] 	     fifo_dout;
    reg 		     fifo_disable = 1'b0;
    reg 		     fifo_enable = 1'b0;
    reg [19:0] 	     fifo_block_count_match;
@@ -64,13 +62,11 @@ module pcie_tx
 	if(pio_write_valid && (pio_write_address == 10))
 	  fifo_block_count_match <= pio_write_data[26:7];
 	fifo_active <= (fifo_disable || reset) ? 1'b0 : (fifo_active || fifo_enable);
-	fifo_ready <= ~fifo_almost_full;
 	fifo_block_count <= fifo_active ? fifo_block_count + fifo_block_done : 1'b0;
 	if(pio_write_valid && pio_write_address[12:9] == 1)
 	  fifo_page_table[pio_write_address[4:0]] <= pio_write_data[63:22];
 	fifo_page_table_oreg <= fifo_page_table[fifo_block_count[19:15]];
 	fifo_interrupt_match <= (fifo_block_count == fifo_block_count_match) && fifo_block_done;
-	fifo_interrupt_flag <= fifo_dout[64] && fifo_read;
      end
    
    wire [31:0] 	     read_completion_dw3;
@@ -141,7 +137,7 @@ module pcie_tx
    FIFO_DUALCLOCK_MACRO  
      #(.ALMOST_EMPTY_OFFSET(9'h010),  // Sets the almost empty threshold
        .ALMOST_FULL_OFFSET(9'h020),  // Sets almost full threshold
-       .DATA_WIDTH(65),
+       .DATA_WIDTH(64),
        .DEVICE("7SERIES"),
        .FIFO_SIZE ("36Kb"), // "18Kb" or "36Kb"
        .FIRST_WORD_FALL_THROUGH ("FALSE")

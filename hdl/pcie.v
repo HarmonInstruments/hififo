@@ -2,22 +2,36 @@
 
 module pcie
   (
-   output [3:0]     pci_exp_txp,
-   output [3:0]     pci_exp_txn,
-   input [3:0] 	    pci_exp_rxp,
-   input [3:0] 	    pci_exp_rxn,
-   input 	    sys_clk_p,
-   input 	    sys_clk_n,
-   input 	    sys_rst_n,
-/*   output 	    pio_write_valid,
-   output 	    pio_read_valid,
-   output [63:0]    pio_write_data,
-   output [12:0]    pio_address,
-   input [63:0]     pio_read_data,*/
-   output reg [3:0] led = 4'h5
+   output [3:0]  pci_exp_txp,
+   output [3:0]  pci_exp_txn,
+   input [3:0] 	 pci_exp_rxp,
+   input [3:0] 	 pci_exp_rxn,
+   input 	 sys_clk_p,
+   input 	 sys_clk_n,
+   input 	 sys_rst_n,
+   // FIFOs
+   input 	 fifo_clock,
+   output 	 fifo_reset,
+   input [63:0]  fifo_to_pc_data,
+   input 	 fifo_to_pc_write,
+   output 	 fifo_to_pc_almost_full,
+   output [63:0] fifo_from_pc_data,
+   input 	 fifo_from_pc_read,
+   output 	 fifo_from_pc_empty,
+   // PIO
+   output 	 pio_clock,
+   output 	 pio_write_valid,
+   output 	 pio_read_valid,
+   output [63:0] pio_write_data,
+   output [12:0] pio_address,
+   input [63:0]  pio_read_data,
+   input 	 pio_read_data_valid
    );
    
    wire 	clock;
+   assign pio_clock = clock;
+   assign fifo_reset = 1'b0;
+   
    wire 	user_reset;
    wire 	user_lnk_up;
    wire 	cfg_to_turnoff;
@@ -28,16 +42,12 @@ module pcie
    reg 		cfg_turnoff_ok = 0;
    wire 	cfg_interrupt_rdy;
    reg 		cfg_interrupt = 0;
+   wire [23:0] 	rx_rid_tag;
       
    IBUF   pci_reset_ibuf (.O(sys_rst_n_c), .I(sys_rst_n));
    IBUFDS_GTE2 refclk_ibuf (.O(sys_clk), .ODIV2(), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
 
-   wire [23:0] 	rx_rid_tag;
-   wire [12:0] 	rx_address;
-   wire 	read_valid;
-   wire 	write_valid;
    wire 	completion_valid;
-   wire [63:0] 	write_data;
    reg 		read_done = 0;
    
    always @(posedge clock) 
@@ -45,8 +55,6 @@ module pcie
 	pcie_reset <= user_reset | ~user_lnk_up;
 	// fix this
    	cfg_turnoff_ok <= cfg_to_turnoff; // not if a completion is pending
-	if(write_valid)
-	  led[3:0] <= write_data[3:0];
      end  
    
    reg [63:0] read_data = 0;
@@ -59,72 +67,40 @@ module pcie
    wire        write_fifo_active;
    wire [19:0] write_fifo_block_count;
 
-   wire        write_fifo_ready;
-   reg 	       write_fifo_write = 0;
-   reg [64:0]  write_fifo_data = 0;
-
-   wire        read_fifo_read = 1'b1;
-//(read_fifo_ready && write_fifo_ready);
-   wire        read_fifo_empty;
-   
-   wire [63:0] read_fifo_data;
-   wire        read_fifo_ready;
-
-   reg [3:0]   no_read = 0;
-   //reg [31:0]  trans_count = 0;
-   
-   always @ (posedge clock)
-     begin
-	if(~read_fifo_empty)//read_fifo_ready && write_fifo_ready)
-	  begin
-	     //read_fifo_read <= 1'b1;
-	     write_fifo_write <= 1'b1;
-	     write_fifo_data <= {read_fifo_data[63:60] == 1, read_fifo_data[63:0]};
-	     //trans_count <= trans_count + 1'b1;
-	  end
-	else
-	  begin
-	     //read_fifo_read <= 1'b0;
-	     write_fifo_write <= 1'b0;
-	  end
-     end
-   
    wire        read_fifo_active;
    wire [17:0] read_fifo_block_count;
    
-   reg [3:0]   interrupt_latch = 0;
-   reg [3:0]   interrupt_enable = 0;
-   wire [3:0]  interrupt;
-   
+   reg [2:0]   interrupt_latch = 0;
+   reg [2:0]   interrupt_enable = 0;
+   wire [2:0]  interrupt;
+         
    // PIO control
    always @ (posedge clock)
      begin
-	if(write_valid)
+	if(pio_write_valid)
 	  begin
-	     case(rx_address)
-	       0: interrupt_enable <= write_data[3:0];
+	     case(pio_address)
+	       0: interrupt_enable <= pio_write_data[2:0];
 	     endcase
 	  end
 	if(completion_valid)
-	  ldata <= write_data;
+	  ldata <= pio_write_data;
 	if((interrupt & interrupt_enable) != 0)
 	  cfg_interrupt <= 1'b1;
 	else if(cfg_interrupt_rdy)
 	  cfg_interrupt <= 1'b0;
 
 	cpld_count <= cpld_count + completion_valid;
-	read_count <= read_count + read_valid;
-	write_count <= write_count + write_valid;
-	interrupt_latch <= (read_valid && rx_address == 0) ? 1'b0 : interrupt_latch | interrupt;
-	if(read_valid)
+	read_count <= read_count + pio_read_valid;
+	write_count <= write_count + pio_write_valid;
+	interrupt_latch <= (pio_read_valid && pio_address == 0) ? 1'b0 : interrupt_latch | interrupt;
+	if(pio_read_valid)
 	  begin
-	     case(rx_address)
-	       14'h0000: read_data <= {read_fifo_active, write_fifo_active, 4'd0, interrupt_latch};
+	     case(pio_address)
+	       14'h0000: read_data <= {read_fifo_active, write_fifo_active, 5'd0, interrupt_latch};
 	       14'h0002: read_data <= {cpld_count, write_count, read_count};
 	       14'h0003: read_data <= {write_fifo_block_count, 7'd0};
 	       14'h0004: read_data <= {read_fifo_block_count, 9'd0};
-	       //4: read_data <= read_fifo_data;
-	       14'h0006: read_data <= {read_fifo_ready, write_fifo_ready};
 	       14'h0007: read_data <= ldata;
 	       default: read_data <= 64'h0;
 	     endcase
@@ -138,16 +114,16 @@ module pcie
 
    always @(posedge clock)
      begin
-	if(read_valid)
+	if(pio_read_valid)
 	  begin
 	     read_completion_rid_tag <= rx_rid_tag;
-	     read_completion_lower_addr <= rx_address[3:0];
+	     read_completion_lower_addr <= pio_address[3:0];
 	  end
-	read_done <= read_valid;
+	read_done <= pio_read_valid;
 	read_completion_valid <= read_done;
 	if(read_done)
 	  read_completion_data <= read_data;
-     end // always @ (posedge clock)
+     end
 
    wire        read_request_valid;
    wire [63:0] read_request_address;
@@ -156,26 +132,25 @@ module pcie
      (.clock(clock),
       .reset(pcie_reset),
       // PIO control
-      .pio_write_valid(write_valid),
-      .pio_write_address(rx_address),
-      .pio_write_data(write_data),
+      .pio_write_valid(pio_write_valid),
+      .pio_write_address(pio_address),
+      .pio_write_data(pio_write_data),
       // read completion
       .completion_valid(completion_valid),
-      .completion_data(write_data),
+      .completion_data(pio_write_data),
       // read request
       .read_request_valid(read_request_valid),
       .read_request_address(read_request_address),
       // status
-      .fifo_interrupt_match(interrupt[2]),
-      .fifo_interrupt_done(interrupt[3]),
+      .fifo_interrupt_match(interrupt[1]),
+      .fifo_interrupt_done(interrupt[2]),
       .fifo_active(read_fifo_active),
       .fifo_block_count(read_fifo_block_count), // [17:0] number of 512 byte blocks transferred
       // FIFO
       .fifo_clock(clock),
-      .fifo_read(read_fifo_read),
-      .fifo_read_data(read_fifo_data),
-      .fifo_empty(read_fifo_empty),
-      .fifo_ready(read_fifo_ready) // minimum 32 positions available
+      .fifo_read(fifo_from_pc_read),
+      .fifo_read_data(fifo_from_pc_data),
+      .fifo_empty(fifo_from_pc_empty)
       );
    
    wire 	m_axis_rx_tvalid;
@@ -186,11 +161,11 @@ module pcie
      (.clock(clock),
       .reset(pcie_reset),
       // outputs
-      .write_valid(write_valid),
-      .read_valid(read_valid),
+      .write_valid(pio_write_valid),
+      .read_valid(pio_read_valid),
       .completion_valid(completion_valid),
-      .data(write_data),
-      .address(rx_address),
+      .data(pio_write_data),
+      .address(pio_address),
       .rid_tag(rx_rid_tag),
       // AXI stream from PCIE core
       .tvalid(m_axis_rx_tvalid),
@@ -209,24 +184,23 @@ module pcie
       .reset(pcie_reset),
       .pcie_id(pcie_id),
       // PIO control
-      .pio_write_valid(write_valid),
-      .pio_write_address(rx_address),
-      .pio_write_data(write_data),
+      .pio_write_valid(pio_write_valid),
+      .pio_write_address(pio_address),
+      .pio_write_data(pio_write_data),
       // read completion
       .read_completion_valid(read_completion_valid),
       .read_completion_rid_tag(read_completion_rid_tag), // 24
       .read_completion_lower_addr(read_completion_lower_addr),// 4
       .read_completion_data(read_completion_data),
       // status
-      .fifo_interrupt_match(interrupt[1]),
-      .fifo_interrupt_flag(interrupt[0]),
+      .fifo_interrupt_match(interrupt[0]),
       .fifo_active(write_fifo_active),
       .fifo_block_count(write_fifo_block_count), // [19:0] number of 128 byte blocks transmitted
       // FIFO
       .fifo_clock(clock),
-      .fifo_write_valid(write_fifo_write),
-      .fifo_write_data(write_fifo_data),
-      .fifo_ready(write_fifo_ready), // minimum 32 positions available
+      .fifo_write_valid(fifo_to_pc_write),
+      .fifo_write_data(fifo_to_pc_data),
+      .fifo_almost_full(fifo_to_pc_almost_full),
       // read request
       .read_request_valid(read_request_valid),
       .read_request_address(read_request_address),
