@@ -6,6 +6,7 @@
 #include <asm/uaccess.h>
 #include <linux/sysfs.h>
 #include <linux/interrupt.h>
+#include <linux/sched.h>
 
 #define VENDOR_ID 0x10EE
 #define DEVICE_ID 0x7024
@@ -31,6 +32,8 @@ volatile static uint64_t *bar0base = 0;
 static int vna_dsp_major = 0;
 static int vna_dsp_is_open = 0;
 
+static wait_queue_head_t queue_read;
+
 static int vna_dsp_open(struct inode *inode, struct file *file){
   if (vna_dsp_is_open)
     return -EBUSY;
@@ -42,26 +45,26 @@ static int vna_dsp_open(struct inode *inode, struct file *file){
 static int vna_dsp_release(struct inode *inode, struct file *file){
   vna_dsp_is_open--;/* We're now ready for our next caller */
   module_put(THIS_MODULE); // decrement the usage count
-  return 0;
+  return SUCCESS;
 }
 
 static ssize_t vna_dsp_read(struct file *filp,/* see include/linux/fs.h   */
 			    char *buffer,/* buffer to fill with data */
 			    size_t length,/* length of the buffer     */
 			    loff_t * offset){
-  unsigned long bytes_left;
-  if(length > 4*1024*1024)
-    length = 4*1024*1024;
   //bytes_left = copy_to_user(buffer, vna_dsp_buffer, length);
-  return 0;//length - bytes_left;
+  //status = wait_event_timeout(queue_read, condition, HZ/4); // retval: 0 if timed out, else number of jiffies remaining
+
+  return 0; // bytes remaining
 }
 
 static ssize_t vna_dsp_write(struct file *filp,
 			    const char *buff,
 			    size_t len,
 			    loff_t * off){
+  //copy_from_user(dest, buff, count);
+
   printk(KERN_ALERT "Sorry, this operation isn't supported.\n");
-  bar0base[1] = 0;
   return -EINVAL;
 }
 
@@ -74,8 +77,7 @@ static struct file_operations fops = {
 
 static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   //struct sample_dev *dev = dev_id;
-  /* now `dev' points to the right hardware item */
-  /* .... */
+  wake_up_all(&queue_read);
   printk("VNA interrupt: sr = %llx\n", (uint64_t) readq(&bar0base[0]));
   return IRQ_HANDLED;
 }
@@ -116,6 +118,8 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
   //pci_set_dma_mask(dev, 0xFFFFFFFF); // if this fails, try 32
   //pci_set_consistent_dma_mask(dev, 0xFFFFFFFF);
   
+  init_waitqueue_head(&queue_read);
+  
   for(i=0; i<BUFFER_PAGES_OUT; i++){
     buffer_out[i] = pci_alloc_consistent(dev, BUFFER_PAGE_SIZE, &buffer_out_dma_addr[i]);
     printk("allocated buffer_out[%d] at %16llx phys: %16llx\n", i, (uint64_t) buffer_out[i], buffer_out_dma_addr[i]);
@@ -133,7 +137,7 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
       printk("Failed to allocate in buffer %d\n", i);
     else{
       for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
-	buffer_in[i][j] = 0xAAAAAAAA + j << 32;
+	buffer_in[i][j] = 0xAAAAAAAA + ((u64) j << 32);
     }
   }
 
@@ -158,7 +162,7 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
   writeq(0, &bar0base[12]);
   // load the page tables
   for(i=0; i<32; i++){
-    writeq(buffer_in_dma_addr[i%BUFFER_PAGES_IN], &bar0base[i+512]);
+    writeq(cpu_to_le64(buffer_in_dma_addr[i%BUFFER_PAGES_IN]), &bar0base[i+512]);
     writeq(buffer_out_dma_addr[i%BUFFER_PAGES_OUT], &bar0base[i+64]);
   }
   for(i=0; i<8; i++)
@@ -178,7 +182,6 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
   for(i=0; i<8; i++)
     printk("buf_out[%d] = %llx\n", i, (uint64_t) readq(&buffer_out[0][i]));
   
-  buffer_out[0][0] = 0x1EADBEEF00000000;
   writeq(4*1024*1024, &bar0base[11]); // enable
   udelay(1000);
   for(i=0; i<32; i++)
