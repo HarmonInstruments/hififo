@@ -7,6 +7,7 @@
 #include <linux/sysfs.h>
 #include <linux/interrupt.h>
 #include <linux/sched.h>
+#include <linux/cdev.h>
 
 #define VENDOR_ID 0x10EE
 #define DEVICE_ID 0x7024
@@ -20,7 +21,10 @@ static struct pci_device_id vna_dsp_pci_table[] = {
 
 #define BUFFER_PAGES_OUT 4
 #define BUFFER_PAGES_IN 16
+#define BUFFER_MAX_PAGES 32
 #define BUFFER_PAGE_SIZE (4096*1024) // this is the size of a page in the card's page table
+
+#define REG_INTERRUPT 0
 
 static dma_addr_t buffer_out_dma_addr[BUFFER_PAGES_OUT];
 static uint64_t *buffer_out[BUFFER_PAGES_OUT];
@@ -31,20 +35,36 @@ static uint64_t *buffer_in[BUFFER_PAGES_IN];
 volatile static uint64_t *bar0base = 0;
 static int vna_dsp_major = 0;
 static int vna_dsp_is_open = 0;
+static struct class *vna_class;
 
-static wait_queue_head_t queue_read;
+struct hififo_dev {
+  struct cdev hififo_cdev;
+  dma_addr_t to_pc_dma_addr[BUFFER_MAX_PAGES];
+  dma_addr_t from_pc_dma_addr[BUFFER_MAX_PAGES];
+  u64 *to_pc_buffer[BUFFER_MAX_PAGES];
+  u64 *from_pc_buffer[BUFFER_MAX_PAGES];
+  wait_queue_head_t queue_read;
+  int a;
+};
 
-static int vna_dsp_open(struct inode *inode, struct file *file){
+static int vna_dsp_open(struct inode *inode, struct file *filp){
+  struct hififo_dev *dev = container_of(inode->i_cdev, struct hififo_dev, hififo_cdev);
+  filp->private_data = dev;
+  printk("hififo: open, a = %d\n", dev->a);
   if (vna_dsp_is_open)
     return -EBUSY;
   vna_dsp_is_open++;
   try_module_get(THIS_MODULE); // increment the usage count
+
   return SUCCESS;
 }
 
 static int vna_dsp_release(struct inode *inode, struct file *file){
+  //struct cdev *cdev = inode->i_cdev;
+  //struct hififo_dev *dev = container_of(cdev, struct hififo_dev, hififo_cdev);
   vna_dsp_is_open--;/* We're now ready for our next caller */
   module_put(THIS_MODULE); // decrement the usage count
+  printk("hififo: close\n");
   return SUCCESS;
 }
 
@@ -52,18 +72,26 @@ static ssize_t vna_dsp_read(struct file *filp,/* see include/linux/fs.h   */
 			    char *buffer,/* buffer to fill with data */
 			    size_t length,/* length of the buffer     */
 			    loff_t * offset){
+  struct hififo_dev *dev = filp->private_data;
+  
+  if((length&0x7) != 0) /* reads must be a multiple of 8 bytes */
+    return -EINVAL;
   //bytes_left = copy_to_user(buffer, vna_dsp_buffer, length);
-  //status = wait_event_timeout(queue_read, condition, HZ/4); // retval: 0 if timed out, else number of jiffies remaining
-
+  //status = wait_event_interruptible_timeout(queue_read, condition, HZ/4); // retval: 0 if timed out, else number of jiffies remaining
+  printk("hififo: read, a = %d\n", dev->a);
   return 0; // bytes remaining
 }
 
 static ssize_t vna_dsp_write(struct file *filp,
-			    const char *buff,
-			    size_t len,
+			    const char *buf,
+			    size_t length,
 			    loff_t * off){
-  //copy_from_user(dest, buff, count);
-
+  int retval;
+  length &= 0xFFFFFFFFF8;
+  if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
+    return -EINVAL;
+  retval = copy_from_user(buffer_out, buf, length);
+  writeq(length >> 3, &bar0base[11]); // enable
   printk(KERN_ALERT "Sorry, this operation isn't supported.\n");
   return -EINVAL;
 }
@@ -76,9 +104,9 @@ static struct file_operations fops = {
 };
 
 static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
-  //struct sample_dev *dev = dev_id;
-  wake_up_all(&queue_read);
-  printk("VNA interrupt: sr = %llx\n", (uint64_t) readq(&bar0base[0]));
+  //struct hififo_dev *dev = dev_id;
+  //wake_up_all(&dev->queue_read);
+  printk("VNA interrupt: sr = %llx\n", (uint64_t) readq(&bar0base[REG_INTERRUPT]));
   return IRQ_HANDLED;
 }
 
@@ -100,28 +128,55 @@ static void check_buffer(void)
   printk("found %d errors\n", printcount);
 }
 
-static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
-  int i, j;
-  int retval = pci_enable_device(dev);
+static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
+  int i, j, err, devno;
+  int retval;
+  dev_t dev = 0;
+  struct hififo_dev *drvdata;
+
+  retval = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME);
+  vna_dsp_major = MAJOR(dev);
+  if (retval < 0) {
+    printk(KERN_WARNING "vna_dsp: can't get major %d\n", vna_dsp_major);
+    return retval;
+  }
+  drvdata = devm_kzalloc(&pdev->dev, sizeof(struct hififo_dev), GFP_KERNEL);
+  if (!drvdata){
+    printk("failed to alloc drvdata\n");
+    return -ENOMEM;
+  }
+  devno = MKDEV(vna_dsp_major, 0);
+  cdev_init(&drvdata->hififo_cdev, &fops);
+  drvdata->hififo_cdev.owner = THIS_MODULE;
+  drvdata->hififo_cdev.ops = &fops;
+  err = cdev_add (&drvdata->hififo_cdev, devno, 1);
+  if (err)
+    printk(KERN_NOTICE "Error %d adding cdev\n", err);
+  device_create(vna_class, NULL, MKDEV(vna_dsp_major, 0), NULL, "vna");
+
+  
+  init_waitqueue_head(&drvdata->queue_read);
+  drvdata->a = 3;
+
+  retval = pci_enable_device(pdev);
   if(retval < 0) return retval;
-  retval = pci_request_regions(dev, DEVICE_NAME);
+  retval = pci_request_regions(pdev, DEVICE_NAME);
   if(retval < 0){
-    pci_disable_device(dev);
+    pci_disable_device(pdev);
     return retval;
   }
   printk("Found Harmon Instruments PCI Express interface board\n");
+  pci_set_drvdata(pdev, drvdata);
 
-  pci_set_master  (dev);
-  pci_set_dma_mask(dev, 0xFFFFFFFFFFFFFFFF);
-  pci_set_consistent_dma_mask(dev, 0xFFFFFFFFFFFFFFFF);
+  pci_set_master  (pdev); // check return values on these
+  pci_set_dma_mask(pdev, 0xFFFFFFFFFFFFFFFF);
+  pci_set_consistent_dma_mask(pdev, 0xFFFFFFFFFFFFFFFF);
 
   //pci_set_dma_mask(dev, 0xFFFFFFFF); // if this fails, try 32
   //pci_set_consistent_dma_mask(dev, 0xFFFFFFFF);
-  
-  init_waitqueue_head(&queue_read);
-  
+   
   for(i=0; i<BUFFER_PAGES_OUT; i++){
-    buffer_out[i] = pci_alloc_consistent(dev, BUFFER_PAGE_SIZE, &buffer_out_dma_addr[i]);
+    buffer_out[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &buffer_out_dma_addr[i]);
     printk("allocated buffer_out[%d] at %16llx phys: %16llx\n", i, (uint64_t) buffer_out[i], buffer_out_dma_addr[i]);
     if(buffer_out[i] == NULL)
       printk("Failed to allocate out buffer %d\n", i);
@@ -131,7 +186,7 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
     }
   }
   for(i=0; i<BUFFER_PAGES_IN; i++){
-    buffer_in[i] = pci_alloc_consistent(dev, BUFFER_PAGE_SIZE, &buffer_in_dma_addr[i]);
+    buffer_in[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &buffer_in_dma_addr[i]);
     printk("allocated buffer_in[%d] at %llx phys: %llx\n", i, (uint64_t) buffer_in[i], buffer_in_dma_addr[i]);
     if(buffer_in[i] == NULL)
       printk("Failed to allocate in buffer %d\n", i);
@@ -141,13 +196,13 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
     }
   }
 
-  if(pci_enable_msi(dev) < 0)
+  if(pci_enable_msi(pdev) < 0)
     printk("VNA: pci_enable_msi() failed\n"); // check retval
-  if(request_irq(dev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, dev) != 0)
+  if(request_irq(pdev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, pdev) != 0)
     printk("VNA: request_irq() failed\n");
   
-  bar0base = (uint64_t *) ioremap(pci_resource_start(dev, 0), 65536);
-  printk("pci_resource_start(dev, 0) = %llx\n", (uint64_t) pci_resource_start(dev, 0));
+  bar0base = (uint64_t *) ioremap(pci_resource_start(pdev, 0), 65536);
+  printk("pci_resource_start(dev, 0) = %llx\n", (uint64_t) pci_resource_start(pdev, 0));
   printk("BAR 0 base (remapped) = %llx\n", (uint64_t) bar0base);
   
   for(i=0; i<8; i++)
@@ -177,7 +232,7 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
   
   for(i=0; i<8; i++)
     printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&bar0base[i]));
-  for(i=0; i<32; i++)
+  for(i=0; i<8; i++)
     printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&buffer_in[0][i]));
   for(i=0; i<8; i++)
     printk("buf_out[%d] = %llx\n", i, (uint64_t) readq(&buffer_out[0][i]));
@@ -194,21 +249,24 @@ static int vna_dsp_probe(struct pci_dev *dev, const struct pci_device_id *id){
   return 0;
 }
 
-static void vna_dsp_remove(struct pci_dev *dev){
+static void vna_dsp_remove(struct pci_dev *pdev){
   int i;
   iounmap(bar0base);
-  free_irq(dev->irq, dev); // void
-  pci_disable_msi(dev); // check retval?
+  free_irq(pdev->irq, pdev); // void
+  pci_disable_msi(pdev); // check retval?
   for(i=0; i<BUFFER_PAGES_OUT; i++){
     if(buffer_out[i])
-      pci_free_consistent(dev, BUFFER_PAGE_SIZE, (void *) buffer_out[i], buffer_out_dma_addr[i]);
+      pci_free_consistent(pdev, BUFFER_PAGE_SIZE, (void *) buffer_out[i], buffer_out_dma_addr[i]);
   }
   for(i=0; i<BUFFER_PAGES_IN; i++){
     if(buffer_in[i])
-      pci_free_consistent(dev, BUFFER_PAGE_SIZE, (void *) buffer_in[i], buffer_in_dma_addr[i]);
+      pci_free_consistent(pdev, BUFFER_PAGE_SIZE, (void *) buffer_in[i], buffer_in_dma_addr[i]);
   }
-  pci_release_regions(dev);
-  pci_disable_device(dev);
+  pci_release_regions(pdev);
+  pci_disable_device(pdev);
+  unregister_chrdev(vna_dsp_major, DEVICE_NAME);
+  device_destroy(vna_class, MKDEV(vna_dsp_major, 0));
+
 }
 
 static struct pci_driver vna_dsp_driver = {
@@ -216,31 +274,21 @@ static struct pci_driver vna_dsp_driver = {
   .id_table = vna_dsp_pci_table,
   .probe = vna_dsp_probe,
   .remove = vna_dsp_remove,
+  // see Documentation/PCI/pci.txt - pci_register_driver call
 };
-
-static struct class *vna_class;
 
 static int __init vna_dsp_init(void){
   printk ("Loading vna_dsp kernel module\n");
-  vna_dsp_major = register_chrdev(0, DEVICE_NAME, &fops);
-  if(vna_dsp_major < 0){
-    printk(KERN_ALERT "Registering char device failed with %d\n", vna_dsp_major);
-    return vna_dsp_major;
-  }
   vna_class = class_create(THIS_MODULE, "vna");
   if (IS_ERR(vna_class)) {
     printk(KERN_ERR "Error creating vna class.\n");
     //goto error;
   }
-  device_create(vna_class, NULL, MKDEV(vna_dsp_major, 0), NULL, "vna");
-  
   return pci_register_driver(&vna_dsp_driver);
 }
 
 static void __exit vna_dsp_exit(void){
   pci_unregister_driver(&vna_dsp_driver);
-  unregister_chrdev(vna_dsp_major, DEVICE_NAME);
-  device_destroy(vna_class, MKDEV(vna_dsp_major, 0));
   class_destroy(vna_class);
   printk ("Unloading vna_dsp kernel module.\n");
   return;
