@@ -73,12 +73,11 @@ static ssize_t vna_dsp_read(struct file *filp,/* see include/linux/fs.h   */
 			    size_t length,/* length of the buffer     */
 			    loff_t * offset){
   struct hififo_dev *dev = filp->private_data;
-  
   if((length&0x7) != 0) /* reads must be a multiple of 8 bytes */
     return -EINVAL;
   //bytes_left = copy_to_user(buffer, vna_dsp_buffer, length);
   //status = wait_event_interruptible_timeout(queue_read, condition, HZ/4); // retval: 0 if timed out, else number of jiffies remaining
-  printk("hififo: read, a = %d\n", dev->a);
+  printk("hififo: read, a = %d\n", dev->a++);
   return 0; // bytes remaining
 }
 
@@ -86,7 +85,9 @@ static ssize_t vna_dsp_write(struct file *filp,
 			    const char *buf,
 			    size_t length,
 			    loff_t * off){
+  struct hififo_dev *dev = filp->private_data;
   int retval;
+  printk("hififo: write, a = %d\n", dev->a++);
   length &= 0xFFFFFFFFF8;
   if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
     return -EINVAL;
@@ -104,7 +105,8 @@ static struct file_operations fops = {
 };
 
 static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
-  //struct hififo_dev *dev = dev_id;
+  struct hififo_dev *dev = dev_id;
+  printk("hififo: interrupt, a = %d\n", dev->a);
   //wake_up_all(&dev->queue_read);
   printk("VNA interrupt: sr = %llx\n", (uint64_t) readq(&bar0base[REG_INTERRUPT]));
   return IRQ_HANDLED;
@@ -142,7 +144,7 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   }
   drvdata = devm_kzalloc(&pdev->dev, sizeof(struct hififo_dev), GFP_KERNEL);
   if (!drvdata){
-    printk("failed to alloc drvdata\n");
+    printk(KERN_ERR "failed to alloc drvdata\n");
     return -ENOMEM;
   }
   devno = MKDEV(vna_dsp_major, 0);
@@ -158,7 +160,7 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   init_waitqueue_head(&drvdata->queue_read);
   drvdata->a = 3;
 
-  retval = pci_enable_device(pdev);
+  retval = pcim_enable_device(pdev);
   if(retval < 0) return retval;
   retval = pci_request_regions(pdev, DEVICE_NAME);
   if(retval < 0){
@@ -178,8 +180,10 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   for(i=0; i<BUFFER_PAGES_OUT; i++){
     buffer_out[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &buffer_out_dma_addr[i]);
     printk("allocated buffer_out[%d] at %16llx phys: %16llx\n", i, (uint64_t) buffer_out[i], buffer_out_dma_addr[i]);
-    if(buffer_out[i] == NULL)
+    if(buffer_out[i] == NULL){
       printk("Failed to allocate out buffer %d\n", i);
+      return -ENOMEM;
+    }
     else{
       for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
 	buffer_out[i][j] = j + i*512*1024;
@@ -188,8 +192,10 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   for(i=0; i<BUFFER_PAGES_IN; i++){
     buffer_in[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &buffer_in_dma_addr[i]);
     printk("allocated buffer_in[%d] at %llx phys: %llx\n", i, (uint64_t) buffer_in[i], buffer_in_dma_addr[i]);
-    if(buffer_in[i] == NULL)
+    if(buffer_in[i] == NULL){
       printk("Failed to allocate in buffer %d\n", i);
+      return -ENOMEM;
+    }
     else{
       for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
 	buffer_in[i][j] = 0xAAAAAAAA + ((u64) j << 32);
@@ -198,10 +204,10 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 
   if(pci_enable_msi(pdev) < 0)
     printk("VNA: pci_enable_msi() failed\n"); // check retval
-  if(request_irq(pdev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, pdev) != 0)
+  if(devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, pdev) != 0)
     printk("VNA: request_irq() failed\n");
   
-  bar0base = (uint64_t *) ioremap(pci_resource_start(pdev, 0), 65536);
+  bar0base = (uint64_t *) pcim_iomap(pdev, 0, 65536);
   printk("pci_resource_start(dev, 0) = %llx\n", (uint64_t) pci_resource_start(pdev, 0));
   printk("BAR 0 base (remapped) = %llx\n", (uint64_t) bar0base);
   
@@ -250,10 +256,10 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 }
 
 static void vna_dsp_remove(struct pci_dev *pdev){
-  int i;
-  iounmap(bar0base);
-  free_irq(pdev->irq, pdev); // void
-  pci_disable_msi(pdev); // check retval?
+  //iounmap(bar0base);
+  //free_irq(pdev->irq, pdev); // void
+  /*pci_disable_msi(pdev); // check retval?
+  
   for(i=0; i<BUFFER_PAGES_OUT; i++){
     if(buffer_out[i])
       pci_free_consistent(pdev, BUFFER_PAGE_SIZE, (void *) buffer_out[i], buffer_out_dma_addr[i]);
@@ -261,9 +267,9 @@ static void vna_dsp_remove(struct pci_dev *pdev){
   for(i=0; i<BUFFER_PAGES_IN; i++){
     if(buffer_in[i])
       pci_free_consistent(pdev, BUFFER_PAGE_SIZE, (void *) buffer_in[i], buffer_in_dma_addr[i]);
-  }
-  pci_release_regions(pdev);
-  pci_disable_device(pdev);
+      }*/
+  //pci_release_regions(pdev);
+  //pci_disable_device(pdev);
   unregister_chrdev(vna_dsp_major, DEVICE_NAME);
   device_destroy(vna_class, MKDEV(vna_dsp_major, 0));
 
