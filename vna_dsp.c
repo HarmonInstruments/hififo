@@ -19,22 +19,18 @@ static struct pci_device_id vna_dsp_pci_table[] = {
   {0,}
 };
 
-#define BUFFER_PAGES_OUT 4
-#define BUFFER_PAGES_IN 16
+#define BUFFER_PAGES_FROM_PC 4
+#define BUFFER_PAGES_TO_PC 16
 #define BUFFER_MAX_PAGES 32
 #define BUFFER_PAGE_SIZE (4096*1024) // this is the size of a page in the card's page table
 
 #define REG_INTERRUPT 0
 
-static dma_addr_t buffer_out_dma_addr[BUFFER_PAGES_OUT];
-static uint64_t *buffer_out[BUFFER_PAGES_OUT];
-
-static dma_addr_t buffer_in_dma_addr[BUFFER_PAGES_IN];
-static uint64_t *buffer_in[BUFFER_PAGES_IN];
-
+static uint64_t *buffer_out[BUFFER_PAGES_FROM_PC];
+static uint64_t *buffer_in[BUFFER_PAGES_TO_PC];
 
 static int vna_dsp_major = 0;
-static int vna_dsp_is_open = 0;
+
 static struct class *vna_class;
 
 struct hififo_dev {
@@ -45,6 +41,7 @@ struct hififo_dev {
   u64 *from_pc_buffer[BUFFER_MAX_PAGES];
   u64 *pio_reg_base;
   wait_queue_head_t queue_read;
+  int is_open;
   int a;
 };
 
@@ -52,17 +49,16 @@ static int vna_dsp_open(struct inode *inode, struct file *filp){
   struct hififo_dev *dev = container_of(inode->i_cdev, struct hififo_dev, hififo_cdev);
   filp->private_data = dev;
   printk("hififo: open, a = %d\n", dev->a);
-  if (vna_dsp_is_open)
+  if (dev->is_open)
     return -EBUSY;
-  vna_dsp_is_open++;
+  dev->is_open++;
   try_module_get(THIS_MODULE); // increment the usage count
-
   return SUCCESS;
 }
 
 static int vna_dsp_release(struct inode *inode, struct file *filp){
   struct hififo_dev *dev = filp->private_data;
-  vna_dsp_is_open--;/* We're now ready for our next caller */
+  dev->is_open--;/* We're now ready for our next caller */
   module_put(THIS_MODULE); // decrement the usage count
   printk("hififo: close, a = %d\n", dev->a);
   return SUCCESS;
@@ -176,9 +172,9 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   //pci_set_dma_mask(dev, 0xFFFFFFFF); // if this fails, try 32
   //pci_set_consistent_dma_mask(dev, 0xFFFFFFFF);
    
-  for(i=0; i<BUFFER_PAGES_OUT; i++){
-    buffer_out[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &buffer_out_dma_addr[i]);
-    printk("allocated buffer_out[%d] at %16llx phys: %16llx\n", i, (uint64_t) buffer_out[i], buffer_out_dma_addr[i]);
+  for(i=0; i<BUFFER_PAGES_FROM_PC; i++){
+    buffer_out[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->from_pc_dma_addr[i]);
+    printk("allocated buffer_out[%d] at %16llx phys: %16llx\n", i, (uint64_t) buffer_out[i], drvdata->from_pc_dma_addr[i]);
     if(buffer_out[i] == NULL){
       printk("Failed to allocate out buffer %d\n", i);
       return -ENOMEM;
@@ -188,9 +184,9 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 	buffer_out[i][j] = j + i*512*1024;
     }
   }
-  for(i=0; i<BUFFER_PAGES_IN; i++){
-    buffer_in[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &buffer_in_dma_addr[i]);
-    printk("allocated buffer_in[%d] at %llx phys: %llx\n", i, (uint64_t) buffer_in[i], buffer_in_dma_addr[i]);
+  for(i=0; i<BUFFER_PAGES_TO_PC; i++){
+    buffer_in[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->to_pc_dma_addr[i]);
+    printk("allocated buffer_in[%d] at %llx phys: %llx\n", i, (uint64_t) buffer_in[i], drvdata->to_pc_dma_addr[i]);
     if(buffer_in[i] == NULL){
       printk("Failed to allocate in buffer %d\n", i);
       return -ENOMEM;
@@ -218,12 +214,12 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   // set out match
   writeq(256*1024, &drvdata->pio_reg_base[13]); 
   // enable interrupts
-  writeq(0xF, &drvdata->pio_reg_base[0]);
-  writeq(0, &drvdata->pio_reg_base[12]);
-  // load the page tables
+  writeq(cpu_to_le64(0xF), &drvdata->pio_reg_base[REG_INTERRUPT]);
+  writeq(cpu_to_le64(0x0), &drvdata->pio_reg_base[12]);
+  // load the card page tables
   for(i=0; i<32; i++){
-    writeq(cpu_to_le64(buffer_in_dma_addr[i%BUFFER_PAGES_IN]), &drvdata->pio_reg_base[i+512]);
-    writeq(buffer_out_dma_addr[i%BUFFER_PAGES_OUT], &drvdata->pio_reg_base[i+64]);
+    writeq(cpu_to_le64(drvdata->to_pc_dma_addr[i%BUFFER_PAGES_TO_PC]), &drvdata->pio_reg_base[i+512]);
+    writeq(cpu_to_le64(drvdata->from_pc_dma_addr[i%BUFFER_PAGES_FROM_PC]), &drvdata->pio_reg_base[i+64]);
   }
   for(i=0; i<8; i++)
     printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
