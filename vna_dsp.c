@@ -59,12 +59,11 @@ static int vna_dsp_open(struct inode *inode, struct file *filp){
   return SUCCESS;
 }
 
-static int vna_dsp_release(struct inode *inode, struct file *file){
-  //struct cdev *cdev = inode->i_cdev;
-  //struct hififo_dev *dev = container_of(cdev, struct hififo_dev, hififo_cdev);
+static int vna_dsp_release(struct inode *inode, struct file *filp){
+  struct hififo_dev *dev = filp->private_data;
   vna_dsp_is_open--;/* We're now ready for our next caller */
   module_put(THIS_MODULE); // decrement the usage count
-  printk("hififo: close\n");
+  printk("hififo: close, a = %d\n", dev->a);
   return SUCCESS;
 }
 
@@ -106,9 +105,8 @@ static struct file_operations fops = {
 
 static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   struct hififo_dev *dev = dev_id;
-  printk("hififo: interrupt, a = %d\n", dev->a);
   //wake_up_all(&dev->queue_read);
-  printk("VNA interrupt: sr = %llx\n", (uint64_t) readq(&bar0base[REG_INTERRUPT]));
+  printk("VNA interrupt: sr = %llx, a = %d\n", (uint64_t) readq(&bar0base[REG_INTERRUPT]), dev->a);
   return IRQ_HANDLED;
 }
 
@@ -170,7 +168,7 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   printk("Found Harmon Instruments PCI Express interface board\n");
   pci_set_drvdata(pdev, drvdata);
 
-  pci_set_master  (pdev); // check return values on these
+  pci_set_master(pdev); // check return values on these
   pci_set_dma_mask(pdev, 0xFFFFFFFFFFFFFFFF);
   pci_set_consistent_dma_mask(pdev, 0xFFFFFFFFFFFFFFFF);
 
@@ -204,7 +202,7 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 
   if(pci_enable_msi(pdev) < 0)
     printk("VNA: pci_enable_msi() failed\n"); // check retval
-  if(devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, pdev) != 0)
+  if(devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, drvdata) != 0)
     printk("VNA: request_irq() failed\n");
   
   bar0base = (uint64_t *) pcim_iomap(pdev, 0, 65536);
@@ -256,23 +254,8 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 }
 
 static void vna_dsp_remove(struct pci_dev *pdev){
-  //iounmap(bar0base);
-  //free_irq(pdev->irq, pdev); // void
-  /*pci_disable_msi(pdev); // check retval?
-  
-  for(i=0; i<BUFFER_PAGES_OUT; i++){
-    if(buffer_out[i])
-      pci_free_consistent(pdev, BUFFER_PAGE_SIZE, (void *) buffer_out[i], buffer_out_dma_addr[i]);
-  }
-  for(i=0; i<BUFFER_PAGES_IN; i++){
-    if(buffer_in[i])
-      pci_free_consistent(pdev, BUFFER_PAGE_SIZE, (void *) buffer_in[i], buffer_in_dma_addr[i]);
-      }*/
-  //pci_release_regions(pdev);
-  //pci_disable_device(pdev);
   unregister_chrdev(vna_dsp_major, DEVICE_NAME);
   device_destroy(vna_class, MKDEV(vna_dsp_major, 0));
-
 }
 
 static struct pci_driver vna_dsp_driver = {
