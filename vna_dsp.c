@@ -26,9 +26,6 @@ static struct pci_device_id vna_dsp_pci_table[] = {
 
 #define REG_INTERRUPT 0
 
-static uint64_t *buffer_out[BUFFER_PAGES_FROM_PC];
-static uint64_t *buffer_in[BUFFER_PAGES_TO_PC];
-
 static int vna_dsp_major = 0;
 
 static struct class *vna_class;
@@ -87,7 +84,7 @@ static ssize_t vna_dsp_write(struct file *filp,
   length &= 0xFFFFFFFFF8;
   if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
     return -EINVAL;
-  retval = copy_from_user(buffer_out, buf, length);
+  retval = copy_from_user(dev->from_pc_buffer, buf, length);
   writeq(length >> 3, &dev->pio_reg_base[11]); // enable
   printk(KERN_ALERT "Sorry, this operation isn't supported.\n");
   return -EINVAL;
@@ -107,14 +104,14 @@ static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   return IRQ_HANDLED;
 }
 
-static void check_buffer(void)
+static void check_buffer(u64 *data[])
 {
   int i;
   uint64_t prev = 0;
   uint64_t cur;
   int printcount = 0;
   for(i=0; i<512*1024; i++){
-    cur = readq(&buffer_in[0][i]);
+    cur = readq(&data[0][i]);
     if(cur != prev + 1){
       if(printcount < 200)
 	printk("buf_in[%d] = %llx\n", i, (uint64_t) cur);
@@ -173,27 +170,27 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   //pci_set_consistent_dma_mask(dev, 0xFFFFFFFF);
    
   for(i=0; i<BUFFER_PAGES_FROM_PC; i++){
-    buffer_out[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->from_pc_dma_addr[i]);
-    printk("allocated buffer_out[%d] at %16llx phys: %16llx\n", i, (uint64_t) buffer_out[i], drvdata->from_pc_dma_addr[i]);
-    if(buffer_out[i] == NULL){
+    drvdata->from_pc_buffer[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->from_pc_dma_addr[i]);
+    printk("allocated drvdata->from_pc_buffer[%d] at %16llx phys: %16llx\n", i, (uint64_t) drvdata->from_pc_buffer[i], drvdata->from_pc_dma_addr[i]);
+    if(drvdata->from_pc_buffer[i] == NULL){
       printk("Failed to allocate out buffer %d\n", i);
       return -ENOMEM;
     }
     else{
       for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
-	buffer_out[i][j] = j + i*512*1024;
+	drvdata->from_pc_buffer[i][j] = j + i*512*1024;
     }
   }
   for(i=0; i<BUFFER_PAGES_TO_PC; i++){
-    buffer_in[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->to_pc_dma_addr[i]);
-    printk("allocated buffer_in[%d] at %llx phys: %llx\n", i, (uint64_t) buffer_in[i], drvdata->to_pc_dma_addr[i]);
-    if(buffer_in[i] == NULL){
+    drvdata->to_pc_buffer[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->to_pc_dma_addr[i]);
+    printk("allocated drvdata->to_pc_buffer[%d] at %llx phys: %llx\n", i, (uint64_t) drvdata->to_pc_buffer[i], drvdata->to_pc_dma_addr[i]);
+    if(drvdata->to_pc_buffer[i] == NULL){
       printk("Failed to allocate in buffer %d\n", i);
       return -ENOMEM;
     }
     else{
       for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
-	buffer_in[i][j] = 0xAAAAAAAA + ((u64) j << 32);
+	drvdata->to_pc_buffer[i][j] = 0xAAAAAAAA + ((u64) j << 32);
     }
   }
 
@@ -234,19 +231,19 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   for(i=0; i<8; i++)
     printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
   for(i=0; i<8; i++)
-    printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&buffer_in[0][i]));
+    printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&drvdata->to_pc_buffer[0][i]));
   for(i=0; i<8; i++)
-    printk("buf_out[%d] = %llx\n", i, (uint64_t) readq(&buffer_out[0][i]));
+    printk("buf_out[%d] = %llx\n", i, (uint64_t) readq(&drvdata->from_pc_buffer[0][i]));
   
   writeq(4*1024*1024, &drvdata->pio_reg_base[11]); // enable
   udelay(1000);
   for(i=0; i<32; i++)
     printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
   for(i=0; i<64; i++)
-    printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&buffer_in[0][i]));
+    printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&drvdata->to_pc_buffer[0][i]));
   udelay(10000);
-  printk("check buf 2\n");
-  check_buffer();
+  printk("check buf\n");
+  check_buffer(drvdata->from_pc_buffer);
   return 0;
 }
 
