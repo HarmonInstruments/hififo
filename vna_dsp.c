@@ -32,7 +32,7 @@ static uint64_t *buffer_out[BUFFER_PAGES_OUT];
 static dma_addr_t buffer_in_dma_addr[BUFFER_PAGES_IN];
 static uint64_t *buffer_in[BUFFER_PAGES_IN];
 
-volatile static uint64_t *bar0base = 0;
+
 static int vna_dsp_major = 0;
 static int vna_dsp_is_open = 0;
 static struct class *vna_class;
@@ -43,6 +43,7 @@ struct hififo_dev {
   dma_addr_t from_pc_dma_addr[BUFFER_MAX_PAGES];
   u64 *to_pc_buffer[BUFFER_MAX_PAGES];
   u64 *from_pc_buffer[BUFFER_MAX_PAGES];
+  u64 *pio_reg_base;
   wait_queue_head_t queue_read;
   int a;
 };
@@ -91,7 +92,7 @@ static ssize_t vna_dsp_write(struct file *filp,
   if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
     return -EINVAL;
   retval = copy_from_user(buffer_out, buf, length);
-  writeq(length >> 3, &bar0base[11]); // enable
+  writeq(length >> 3, &dev->pio_reg_base[11]); // enable
   printk(KERN_ALERT "Sorry, this operation isn't supported.\n");
   return -EINVAL;
 }
@@ -105,8 +106,8 @@ static struct file_operations fops = {
 
 static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   struct hififo_dev *dev = dev_id;
-  //wake_up_all(&dev->queue_read);
-  printk("VNA interrupt: sr = %llx, a = %d\n", (uint64_t) readq(&bar0base[REG_INTERRUPT]), dev->a);
+  wake_up_all(&dev->queue_read);
+  printk("VNA interrupt: sr = %llx, a = %d\n", (uint64_t) readq(&dev->pio_reg_base[REG_INTERRUPT]), dev->a);
   return IRQ_HANDLED;
 }
 
@@ -205,46 +206,46 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   if(devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, drvdata) != 0)
     printk("VNA: request_irq() failed\n");
   
-  bar0base = (uint64_t *) pcim_iomap(pdev, 0, 65536);
+  drvdata->pio_reg_base = (uint64_t *) pcim_iomap(pdev, 0, 65536);
   printk("pci_resource_start(dev, 0) = %llx\n", (uint64_t) pci_resource_start(pdev, 0));
-  printk("BAR 0 base (remapped) = %llx\n", (uint64_t) bar0base);
+  printk("BAR 0 base (remapped) = %llx\n", (uint64_t) drvdata->pio_reg_base);
   
   for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&bar0base[i]));
+    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
   
   // set in match
-  writeq(0x1000 >> 2, &bar0base[10]);
+  writeq(0x1000 >> 2, &drvdata->pio_reg_base[10]);
   // set out match
-  writeq(256*1024, &bar0base[13]); 
+  writeq(256*1024, &drvdata->pio_reg_base[13]); 
   // enable interrupts
-  writeq(0xF, &bar0base[0]);
-  writeq(0, &bar0base[12]);
+  writeq(0xF, &drvdata->pio_reg_base[0]);
+  writeq(0, &drvdata->pio_reg_base[12]);
   // load the page tables
   for(i=0; i<32; i++){
-    writeq(cpu_to_le64(buffer_in_dma_addr[i%BUFFER_PAGES_IN]), &bar0base[i+512]);
-    writeq(buffer_out_dma_addr[i%BUFFER_PAGES_OUT], &bar0base[i+64]);
+    writeq(cpu_to_le64(buffer_in_dma_addr[i%BUFFER_PAGES_IN]), &drvdata->pio_reg_base[i+512]);
+    writeq(buffer_out_dma_addr[i%BUFFER_PAGES_OUT], &drvdata->pio_reg_base[i+64]);
   }
   for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&bar0base[i]));
+    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
   // disable it
-  writeq(0, &bar0base[9]);
+  writeq(0, &drvdata->pio_reg_base[9]);
   udelay(1000);
   // enable it
-  writeq(0, &bar0base[8]);
+  writeq(0, &drvdata->pio_reg_base[8]);
   // write some data to the FIFO
   udelay(1000);
   
   for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&bar0base[i]));
+    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
   for(i=0; i<8; i++)
     printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&buffer_in[0][i]));
   for(i=0; i<8; i++)
     printk("buf_out[%d] = %llx\n", i, (uint64_t) readq(&buffer_out[0][i]));
   
-  writeq(4*1024*1024, &bar0base[11]); // enable
+  writeq(4*1024*1024, &drvdata->pio_reg_base[11]); // enable
   udelay(1000);
   for(i=0; i<32; i++)
-    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&bar0base[i]));
+    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
   for(i=0; i<64; i++)
     printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&buffer_in[0][i]));
   udelay(10000);
