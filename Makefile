@@ -8,7 +8,14 @@ clean:
 	make -C $(KERNEL_SOURCE) M=$(PWD) clean
 	rm -rf *~
 unload:
-	sudo rmmod vna_dsp
-load:
-	sudo insmod vna_dsp.ko
+	ssh root@vna "rmmod vna_dsp"
+load: 
+	ssh vna "rm -rf kmod; mkdir kmod"
+	scp Makefile vna_dsp.c vna:kmod
+	ssh vna "cd kmod; make clean all"
+	ssh root@vna "insmod /root/kmod/vna_dsp.ko"
+
+dmesg:
+	ssh vna dmesg
+
 reload: unload load
