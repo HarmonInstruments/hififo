@@ -135,7 +135,7 @@ module pcie_tx
      end
 
    FIFO_DUALCLOCK_MACRO  
-     #(.ALMOST_EMPTY_OFFSET(9'h010),  // Sets the almost empty threshold
+     #(.ALMOST_EMPTY_OFFSET(9'h00F),  // Sets the almost empty threshold
        .ALMOST_FULL_OFFSET(9'h020),  // Sets almost full threshold
        .DATA_WIDTH(64),
        .DEVICE("7SERIES"),
