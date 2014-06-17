@@ -26,6 +26,15 @@ static struct pci_device_id vna_dsp_pci_table[] = {
 
 #define REG_INTERRUPT 0
 
+#define REG_TO_PC_ENABLE 8
+#define REG_TO_PC_DISABLE 9
+#define REG_TO_PC_MATCH 10
+#define REG_FROM_PC_ENABLE 11
+#define REG_FROM_PC_DISABLE 12
+#define REG_FROM_PC_MATCH 13
+#define REG_FROM_PC_PAGE_TABLE_BASE 64
+#define REG_TO_PC_PAGE_TABLE_BASE 512
+
 static int vna_dsp_major = 0;
 
 static struct class *vna_class;
@@ -61,17 +70,20 @@ static int vna_dsp_release(struct inode *inode, struct file *filp){
   return SUCCESS;
 }
 
-static ssize_t vna_dsp_read(struct file *filp,/* see include/linux/fs.h   */
-			    char *buffer,/* buffer to fill with data */
-			    size_t length,/* length of the buffer     */
+static ssize_t vna_dsp_read(struct file *filp,
+			    char *buffer,
+			    size_t length,
 			    loff_t * offset){
   struct hififo_dev *dev = filp->private_data;
+  length &= 0xFFFFFFFFF8;
+  if(length > 1024)
+    length = 1024;
   if((length&0x7) != 0) /* reads must be a multiple of 8 bytes */
     return -EINVAL;
-  //bytes_left = copy_to_user(buffer, vna_dsp_buffer, length);
+  copy_to_user(buffer, dev->to_pc_buffer[0], length);
   //status = wait_event_interruptible_timeout(queue_read, condition, HZ/4); // retval: 0 if timed out, else number of jiffies remaining
-  printk("hififo: read, a = %d\n", dev->a++);
-  return 0; // bytes remaining
+  printk("hififo: read, a = %d, %d bytes\n", dev->a++, length);
+  return length;
 }
 
 static ssize_t vna_dsp_write(struct file *filp,
@@ -80,14 +92,15 @@ static ssize_t vna_dsp_write(struct file *filp,
 			    loff_t * off){
   struct hififo_dev *dev = filp->private_data;
   int retval;
-  printk("hififo: write, a = %d\n", dev->a++);
+  printk("hififo: write, a = %d, %d bytes\n", dev->a++, length);
   length &= 0xFFFFFFFFF8;
   if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
     return -EINVAL;
-  retval = copy_from_user(dev->from_pc_buffer, buf, length);
-  writeq(length >> 3, &dev->pio_reg_base[11]); // enable
-  printk(KERN_ALERT "Sorry, this operation isn't supported.\n");
-  return -EINVAL;
+  if(length > (4*1024*1024))
+    length = 4*1024*1024;
+  retval = copy_from_user(dev->from_pc_buffer[0], buf, length);
+  writeq(length >> 3, &dev->pio_reg_base[REG_FROM_PC_ENABLE]);
+  return length;//-EINVAL;
 }
 
 static struct file_operations fops = {
@@ -171,7 +184,7 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
    
   for(i=0; i<BUFFER_PAGES_FROM_PC; i++){
     drvdata->from_pc_buffer[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->from_pc_dma_addr[i]);
-    printk("allocated drvdata->from_pc_buffer[%d] at %16llx phys: %16llx\n", i, (uint64_t) drvdata->from_pc_buffer[i], drvdata->from_pc_dma_addr[i]);
+    printk("allocated drvdata->from_pc_buffer[%d] at %16llx phys: %16llx\n", i, (u64) drvdata->from_pc_buffer[i], drvdata->from_pc_dma_addr[i]);
     if(drvdata->from_pc_buffer[i] == NULL){
       printk("Failed to allocate out buffer %d\n", i);
       return -ENOMEM;
@@ -183,72 +196,72 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   }
   for(i=0; i<BUFFER_PAGES_TO_PC; i++){
     drvdata->to_pc_buffer[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->to_pc_dma_addr[i]);
-    printk("allocated drvdata->to_pc_buffer[%d] at %llx phys: %llx\n", i, (uint64_t) drvdata->to_pc_buffer[i], drvdata->to_pc_dma_addr[i]);
+    printk("allocated drvdata->to_pc_buffer[%d] at %llx phys: %llx\n", i, (u64) drvdata->to_pc_buffer[i], drvdata->to_pc_dma_addr[i]);
     if(drvdata->to_pc_buffer[i] == NULL){
       printk("Failed to allocate in buffer %d\n", i);
       return -ENOMEM;
     }
     else{
       for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
-	drvdata->to_pc_buffer[i][j] = 0xAAAAAAAA + ((u64) j << 32);
+	drvdata->to_pc_buffer[i][j] = 0xDEADAAAA + ((u64) j << 32);
     }
   }
 
-  if(pci_enable_msi(pdev) < 0)
-    printk("VNA: pci_enable_msi() failed\n"); // check retval
-  if(devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, drvdata) != 0)
-    printk("VNA: request_irq() failed\n");
-  
-  drvdata->pio_reg_base = (uint64_t *) pcim_iomap(pdev, 0, 65536);
-  printk("pci_resource_start(dev, 0) = %llx\n", (uint64_t) pci_resource_start(pdev, 0));
-  printk("BAR 0 base (remapped) = %llx\n", (uint64_t) drvdata->pio_reg_base);
-  
-  for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
-  
-  // set in match
-  writeq(0x1000 >> 2, &drvdata->pio_reg_base[10]);
-  // set out match
-  writeq(256*1024, &drvdata->pio_reg_base[13]); 
-  // enable interrupts
-  writeq(cpu_to_le64(0xF), &drvdata->pio_reg_base[REG_INTERRUPT]);
-  writeq(cpu_to_le64(0x0), &drvdata->pio_reg_base[12]);
-  // load the card page tables
-  for(i=0; i<32; i++){
-    writeq(cpu_to_le64(drvdata->to_pc_dma_addr[i%BUFFER_PAGES_TO_PC]), &drvdata->pio_reg_base[i+512]);
-    writeq(cpu_to_le64(drvdata->from_pc_dma_addr[i%BUFFER_PAGES_FROM_PC]), &drvdata->pio_reg_base[i+64]);
+  if(pci_enable_msi(pdev) < 0){
+    printk(DEVICE_NAME ": pci_enable_msi() failed\n");
+    return -1;
   }
-  for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
-  // disable it
-  writeq(0, &drvdata->pio_reg_base[9]);
-  udelay(1000);
-  // enable it
-  writeq(0, &drvdata->pio_reg_base[8]);
-  // write some data to the FIFO
-  udelay(1000);
-  
-  for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
+  if(devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, drvdata) != 0){
+    printk(DEVICE_NAME ": request_irq() failed\n");
+    return -1;
+  }
+  drvdata->pio_reg_base = (uint64_t *) pcim_iomap(pdev, 0, 65536);
+  printk("pci_resource_start(dev, 0) = %llx\n", (u64) pci_resource_start(pdev, 0));
+  printk("BAR 0 base (remapped) = %llx\n", (u64) drvdata->pio_reg_base);
+
   for(i=0; i<8; i++)
     printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&drvdata->to_pc_buffer[0][i]));
   for(i=0; i<8; i++)
     printk("buf_out[%d] = %llx\n", i, (uint64_t) readq(&drvdata->from_pc_buffer[0][i]));
-  
-  writeq(4*1024*1024, &drvdata->pio_reg_base[11]); // enable
-  udelay(1000);
-  for(i=0; i<32; i++)
+  for(i=0; i<8; i++)
+    printk("bar0[%d] = %llx\n", i, (u64) readq(&drvdata->pio_reg_base[i]));
+
+  /* disable it */
+  writeq(cpu_to_le64(0x0), &drvdata->pio_reg_base[REG_FROM_PC_DISABLE]);
+  writeq(cpu_to_le64(0x0), &drvdata->pio_reg_base[REG_TO_PC_DISABLE]);
+  /* set interrupt match registers */
+  writeq(0x1000 >> 2, &drvdata->pio_reg_base[REG_TO_PC_MATCH]);
+  writeq(256*1024, &drvdata->pio_reg_base[REG_FROM_PC_MATCH]); 
+  /* enable interrupts */
+  writeq(cpu_to_le64(0xF), &drvdata->pio_reg_base[REG_INTERRUPT]);
+  /* load the card page tables */
+  for(i=0; i<32; i++){
+    writeq(cpu_to_le64(drvdata->to_pc_dma_addr[i%BUFFER_PAGES_TO_PC]), &drvdata->pio_reg_base[i+REG_TO_PC_PAGE_TABLE_BASE]);
+    writeq(cpu_to_le64(drvdata->from_pc_dma_addr[i%BUFFER_PAGES_FROM_PC]), &drvdata->pio_reg_base[i+REG_FROM_PC_PAGE_TABLE_BASE]);
+  }
+  for(i=0; i<8; i++)
     printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
-  for(i=0; i<64; i++)
+  /* enable it */
+  writeq(0x1000, &drvdata->pio_reg_base[REG_TO_PC_ENABLE]);
+  writeq(4*1024*1024, &drvdata->pio_reg_base[REG_FROM_PC_ENABLE]); // enable
+  udelay(1000);
+  for(i=0; i<8; i++)
+    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
+  udelay(1000);
+  for(i=0; i<8; i++)
+    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
+  for(i=0; i<32; i++)
     printk("buf_in[%d] = %llx\n", i, (uint64_t) readq(&drvdata->to_pc_buffer[0][i]));
   udelay(10000);
   printk("check buf\n");
   check_buffer(drvdata->from_pc_buffer);
+  for(i=0; i<8; i++)
+    printk("bar0[%d] = %llx\n", i, (uint64_t) readq(&drvdata->pio_reg_base[i]));
   return 0;
 }
 
 static void vna_dsp_remove(struct pci_dev *pdev){
-  unregister_chrdev(vna_dsp_major, DEVICE_NAME);
+  //unregister_chrdev(vna_dsp_major, DEVICE_NAME);
   device_destroy(vna_class, MKDEV(vna_dsp_major, 0));
 }
 
