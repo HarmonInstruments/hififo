@@ -1,4 +1,4 @@
-`timescale 1ns / 1ps
+//`timescale 1ns / 1ps
 
 module pcie_tx
   (
@@ -16,7 +16,7 @@ module pcie_tx
    input [63:0]      read_completion_data,
    // status
    output reg 	     fifo_interrupt_match = 0,
-   output reg 	     fifo_active = 0,
+   output reg 	     fifo_interrupt_done = 0,
    output reg [19:0] fifo_block_count, // number of 128 byte blocks transmitted
    // FIFO
    input 	     fifo_clock, // for all FIFO signals
@@ -37,16 +37,19 @@ module pcie_tx
 
    reg [5:0] 	     tx_state = 0;
    wire 	     data_not_accepted = axis_tx_tvalid & ~axis_tx_tready;
-   
+
    wire 	     fifo_almost_empty;
    wire [63:0] 	     fifo_dout;
-   reg 		     fifo_disable = 1'b0;
-   reg 		     fifo_enable = 1'b0;
-   reg [19:0] 	     fifo_block_count_match;
+   reg [19:0] 	     fifo_block_count_interrupt = 0;
+   reg [19:0] 	     fifo_block_count_done = 0;
    reg [41:0] 	     fifo_page_table[0:31];
    reg [41:0] 	     fifo_page_table_oreg;
    wire 	     fifo_read = ~data_not_accepted && (tx_state > 5) && (tx_state < 22); // pulses high 16 times, once for each word, 1 clock early
    wire 	     fifo_block_done = (tx_state == 23) && ~data_not_accepted;
+   wire 	     fifo_active = fifo_block_count != fifo_block_count_done;
+   reg 		     fifo_enable = 0;
+   reg 		     fifo_drain = 0;
+   
    wire [63:0] 	     write_request_address = {fifo_page_table_oreg, fifo_block_count[14:0], 7'd0};
    wire 	     write_request_is_32_bit = write_request_address[63:32] == 0;
    reg 		     write_request_valid;
@@ -57,16 +60,17 @@ module pcie_tx
    endian_swap endian_swap_wr5(.din(fifo_dout[63:32]), .dout(write_request_data_swapped[63:32]));
    always @ (posedge clock)
      begin
-	fifo_enable <= pio_write_valid && (pio_write_address == 8);
-	fifo_disable <= pio_write_valid && (pio_write_address == 9);
-	if(pio_write_valid && (pio_write_address == 10))
-	  fifo_block_count_match <= pio_write_data[26:7];
-	fifo_active <= (fifo_disable || reset) ? 1'b0 : (fifo_active || fifo_enable);
-	fifo_block_count <= fifo_active ? fifo_block_count + fifo_block_done : 1'b0;
+	case({~pio_write_valid, pio_write_address})
+	  8: fifo_block_count_done <= pio_write_data[26:7];
+	  9: fifo_block_count_interrupt <= pio_write_data[26:7];
+	  10: {fifo_drain,fifo_enable} <= pio_write_data[0];
+	endcase 
+	fifo_block_count <= fifo_enable ? fifo_block_count + fifo_block_done : 1'b0;
 	if(pio_write_valid && pio_write_address[12:9] == 1)
 	  fifo_page_table[pio_write_address[4:0]] <= pio_write_data[63:22];
 	fifo_page_table_oreg <= fifo_page_table[fifo_block_count[19:15]];
-	fifo_interrupt_match <= (fifo_block_count == fifo_block_count_match) && fifo_block_done;
+	fifo_interrupt_match <= (fifo_block_count == fifo_block_count_interrupt) && fifo_block_done;
+	fifo_interrupt_done <= (fifo_block_count == fifo_block_count_done) && fifo_block_done;
      end
    
    wire [31:0] 	     read_completion_dw3;
@@ -120,7 +124,7 @@ module pcie_tx
 	       tx_state <= 5'd1;
 	     else if(read_requested)
 	       tx_state <= 5'd4;
-	     else if(~fifo_almost_empty & fifo_active)
+	     else if(~fifo_almost_empty & fifo_active & fifo_enable)
 	       tx_state <= 5'd6;
 	     else
 	       tx_state <= 5'd0;
@@ -152,9 +156,9 @@ module pcie_tx
       .DI(fifo_write_data),
       .RDCLK(clock),
       .RDEN(fifo_read),
-      .RST(~fifo_active),
+      .RST(reset | fifo_drain),
       .WRCLK(fifo_clock),
-      .WREN(fifo_write_valid)
+      .WREN(fifo_write_valid & ~reset)
       );
    
 endmodule

@@ -50,16 +50,25 @@ module vna_dsp
       .fifo_from_pc_read(fifo_from_pc_read),
       .fifo_from_pc_empty(fifo_from_pc_empty)
       );
-   
+
+   reg 		    use_count = 1;
+      
    always @ (posedge clock)
      begin
 	if(pio_write_valid)
 	  led[3:0] <= pio_write_data[3:0];
-
-	if(~fifo_from_pc_empty)
+	if(pio_write_valid && (pio_address == 15))
+	  use_count <= pio_write_data[0];
+	
+	if(~fifo_from_pc_empty & ~use_count)
 	  begin
 	     fifo_to_pc_write <= 1'b1;
 	     fifo_to_pc_data <= fifo_from_pc_data;
+	  end
+	else if(~fifo_to_pc_almost_full)
+	  begin
+	     fifo_to_pc_write <= 1'b1;
+	     fifo_to_pc_data <= fifo_to_pc_data + 1'b1;
 	  end
 	else
 	  begin
