@@ -13,7 +13,7 @@ load:
 	ssh vna "rm -rf kmod; mkdir kmod"
 	scp Makefile vna_dsp.c vna:kmod
 	ssh vna "cd kmod; make clean all"
-	ssh root@vna "insmod /root/kmod/vna_dsp.ko"
+	ssh root@vna "insmod /home/dlharmon/kmod/vna_dsp.ko"
 
 dmesg:
 	ssh vna dmesg
