@@ -82,9 +82,8 @@ static ssize_t vna_dsp_read(struct file *filp,
 			    loff_t * offset){
   struct hififo_dev *drvdata = filp->private_data;
   size_t count = 0;
-  u64 bytes_in_buffer;
-  u64 copy_length;
-  u64 max_copy_length;
+  size_t bytes_in_buffer;
+  size_t copy_length;
   int retval;
   printk(KERN_INFO DEVICE_NAME ": read, %d bytes\n", (int) length);
   if((length&0x7) != 0) /* reads must be a multiple of 8 bytes */
@@ -94,13 +93,13 @@ static ssize_t vna_dsp_read(struct file *filp,
     if(copy_length > (length-count))
       copy_length = (length-count);
     bytes_in_buffer = (fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1);
-    printk("%lld bytes in buffer, copy length = %lld\n", bytes_in_buffer, copy_length);
+    printk("%zu bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
     if(copy_length > bytes_in_buffer){
       fifo_writereg(drvdata->to_pc_pointer + copy_length, REG_TO_PC_MATCH);
       retval = wait_event_interruptible_timeout(drvdata->queue_read, (((fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1)) >= copy_length), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
       printk("wait retval = %d\n", retval);
       bytes_in_buffer = (fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1);
-      printk("%lld bytes in buffer, copy length = %lld\n", bytes_in_buffer, copy_length);
+      printk("%zu bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
     }
     retval = copy_to_user(buffer+count, (drvdata->to_pc_pointer & (BUFFER_SIZE_TO_PC -1)) + (char *) drvdata->to_pc_buffer[0], copy_length);
     if(retval != 0){
@@ -141,26 +140,28 @@ static struct file_operations fops = {
 
 static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   struct hififo_dev *drvdata = dev_id;
-  wake_up_all(&drvdata->queue_read);
-  printk("VNA interrupt: sr = %llx\n", (uint64_t) fifo_readreg(REG_INTERRUPT));
+  u64 sr = fifo_readreg(REG_INTERRUPT);
+  if(sr & 0x0001)
+    wake_up_all(&drvdata->queue_read);
+  printk("VNA interrupt: sr = %llx\n", sr);
   return IRQ_HANDLED;
 }
 
 static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
-  int i, j, err;
+  int i, j;
   int retval;
   dev_t dev = 0;
   struct hififo_dev *drvdata;
 
   drvdata = devm_kzalloc(&pdev->dev, sizeof(struct hififo_dev), GFP_KERNEL);
   if (!drvdata){
-    printk(KERN_ERR "failed to alloc drvdata\n");
+    printk(KERN_ERR DEVICE_NAME "failed to alloc drvdata\n");
     return -ENOMEM;
   }
 
   retval = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME);
-  if (retval < 0) {
-    printk(KERN_ERR "vna_dsp: can't get major %d\n", MAJOR(dev));
+  if (retval) {
+    printk(KERN_ERR DEVICE_NAME ": alloc_chrdev_region() failed\n");
     return retval;
   }
   
@@ -168,26 +169,35 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   cdev_init(&drvdata->hififo_cdev, &fops);
   drvdata->hififo_cdev.owner = THIS_MODULE;
   drvdata->hififo_cdev.ops = &fops;
-  err = cdev_add (&drvdata->hififo_cdev, MKDEV(MAJOR(dev), 0), 1);
-  if (err)
-    printk(KERN_NOTICE "Error %d adding cdev\n", err);
+  retval = cdev_add (&drvdata->hififo_cdev, MKDEV(MAJOR(dev), 0), 1);
+  if (retval){
+    printk(KERN_NOTICE DEVICE_NAME ": Error %d adding cdev\n", retval);
+    return retval;
+  }
   device_create(vna_class, NULL, MKDEV(MAJOR(dev), 0), NULL, "vna");
   
   init_waitqueue_head(&drvdata->queue_read);
-  drvdata->a = 3;
-
+  
   retval = pcim_enable_device(pdev);
-  if(retval < 0) 
+  if(retval){
+    printk(KERN_ERR DEVICE_NAME ": pcim_enable_device() failed\n");
     return retval;
+  }
+
   retval = pci_request_regions(pdev, DEVICE_NAME);
   if(retval < 0){
+    printk(KERN_ERR DEVICE_NAME ": pci_request_regions() failed\n");
     pci_disable_device(pdev);
     return retval;
   }
-  printk(DEVICE_NAME ": Found Harmon Instruments PCI Express interface board\n");
+
+  printk(KERN_INFO DEVICE_NAME ": Found Harmon Instruments PCI Express interface board\n");
   pci_set_drvdata(pdev, drvdata);
-  pci_set_master(pdev); // check return values on these
+
+  pci_set_master(pdev); /* returns void */
+
   pci_set_dma_mask(pdev, 0xFFFFFFFFFFFFFFFF);
+
   pci_set_consistent_dma_mask(pdev, 0xFFFFFFFFFFFFFFFF);
 
   for(i=0; i<BUFFER_PAGES_FROM_PC; i++){
@@ -255,20 +265,12 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   fifo_writereg(1, REG_TO_PC_ENABLE);
   fifo_writereg(4*1024*1024, REG_FROM_PC_ENABLE); // enable
   drvdata->to_pc_pointer = 0;
-  udelay(1000);
-  for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (u64) fifo_readreg(i));
-  udelay(1000);
-  for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (u64) fifo_readreg(i));
-  udelay(10000);
-  for(i=0; i<8; i++)
-    printk("bar0[%d] = %llx\n", i, (u64) fifo_readreg(i));
   return 0;
 }
 
 static void vna_dsp_remove(struct pci_dev *pdev){
   struct hififo_dev *drvdata = pci_get_drvdata(pdev);
+  fifo_writereg(0, REG_TO_PC_ENABLE);
   device_destroy(vna_class, MKDEV(drvdata->major, 0));
 }
 
