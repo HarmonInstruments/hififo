@@ -8,6 +8,7 @@
 #include <linux/interrupt.h>
 #include <linux/sched.h>
 #include <linux/cdev.h>
+#include <linux/ioctl.h>
 
 #define VENDOR_ID 0x10EE
 #define DEVICE_ID 0x7024
@@ -131,9 +132,30 @@ static ssize_t vna_dsp_write(struct file *filp,
   return length;//-EINVAL;
 }
 
+#define HIFIFO_IOC_MAGIC 'f'
+
+static long vna_dsp_ioctl (struct file *file, unsigned int command, unsigned long arg){
+  struct hififo_dev *drvdata = file->private_data;
+  int retval;
+  
+  if(_IOC_TYPE(command) != HIFIFO_IOC_MAGIC) 
+    return -ENOTTY;
+    
+  switch(command) {
+  case 0x10:
+    retval = 0;
+    drvdata->a = 333;
+    break;
+  default:
+    return -ENOTTY;
+  }
+  return retval;
+}
+
 static struct file_operations fops = {
  .read = vna_dsp_read,
  .write = vna_dsp_write,
+ .unlocked_ioctl = vna_dsp_ioctl,
  .open = vna_dsp_open,
  .release = vna_dsp_release
 };
