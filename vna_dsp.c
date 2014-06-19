@@ -152,10 +152,65 @@ static long vna_dsp_ioctl (struct file *file, unsigned int command, unsigned lon
   return retval;
 }
 
+static int vna_dsp_mmap(struct file *file, struct vm_area_struct *vma)
+{
+  struct hififo_dev *drvdata = file->private_data;
+  unsigned long size;
+  int page_count, retval, i;
+  unsigned long uaddr;
+  
+  if (!(vma->vm_flags & VM_SHARED))
+    return -EINVAL;
+  if (vma->vm_start & ~PAGE_MASK)
+    return -EINVAL;
+
+  size = vma->vm_end - vma->vm_start;
+
+  if (size & ~PAGE_MASK)
+    return -EINVAL;
+  if (size > 2*BUFFER_PAGE_SIZE)
+    return -EINVAL;
+
+  page_count = size >> PAGE_SHIFT;
+  
+  remap_pfn_range(vma,
+		  vma->vm_start, 
+		  drvdata->to_pc_dma_addr[0] >> PAGE_SHIFT,
+		  size/2,
+		  vma->vm_page_prot);
+  remap_pfn_range(vma,
+		  vma->vm_start+size/2, 
+		  drvdata->from_pc_dma_addr[0] >> PAGE_SHIFT,
+		  size/2,
+		  vma->vm_page_prot);
+
+  /*
+  
+  uaddr = vma->vm_start;
+  printk("mmaping %d pages \n", page_count);
+  for (i = 0; i < page_count; i++) {
+    struct page *page = virt_to_page(((void *) drvdata->to_pc_buffer[0]) + i*PAGE_SIZE);
+    printk("page %pR\n", page);
+    //set_page_private(((void *) drvdata->to_pc_buffer[0]) + i*PAGE_SIZE), address);
+    //retval = vm_insert_page(vma, uaddr, page);
+    
+    printk("page %pR\n", page);
+    if (retval){
+      printk("mmap returning failure %d, page %d\n", retval, i);
+      return retval;
+    }
+    uaddr += PAGE_SIZE;
+  }
+  */
+  printk("mmap done returning success\n");
+  return 0;
+}
+
 static struct file_operations fops = {
  .read = vna_dsp_read,
  .write = vna_dsp_write,
  .unlocked_ioctl = vna_dsp_ioctl,
+ .mmap = vna_dsp_mmap,
  .open = vna_dsp_open,
  .release = vna_dsp_release
 };
