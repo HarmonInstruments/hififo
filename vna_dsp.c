@@ -86,7 +86,7 @@ static ssize_t vna_dsp_read(struct file *filp,
   size_t bytes_in_buffer;
   size_t copy_length;
   int retval;
-  printk(KERN_INFO DEVICE_NAME ": read, %d bytes\n", (int) length);
+  //printk(KERN_INFO DEVICE_NAME ": read, %d bytes\n", (int) length);
   if((length&0x7) != 0) /* reads must be a multiple of 8 bytes */
     return -EINVAL;
   while(count != length){
@@ -94,13 +94,13 @@ static ssize_t vna_dsp_read(struct file *filp,
     if(copy_length > (length-count))
       copy_length = (length-count);
     bytes_in_buffer = (fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1);
-    printk("%zu bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
+    //printk("%zu bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
     if(copy_length > bytes_in_buffer){
       fifo_writereg(drvdata->to_pc_pointer + copy_length, REG_TO_PC_MATCH);
       retval = wait_event_interruptible_timeout(drvdata->queue_read, (((fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1)) >= copy_length), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
-      printk("wait retval = %d\n", retval);
+      //printk("wait retval = %d\n", retval);
       bytes_in_buffer = (fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1);
-      printk("%zu bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
+      //printk("%zu bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
     }
     retval = copy_to_user(buffer+count, (drvdata->to_pc_pointer & (BUFFER_SIZE_TO_PC -1)) + (char *) drvdata->to_pc_buffer[0], copy_length);
     if(retval != 0){
@@ -158,7 +158,7 @@ static int vna_dsp_mmap(struct file *file, struct vm_area_struct *vma)
   unsigned long size;
   int page_count, retval, i;
   unsigned long uaddr;
-  
+
   if (!(vma->vm_flags & VM_SHARED))
     return -EINVAL;
   if (vma->vm_start & ~PAGE_MASK)
@@ -184,24 +184,6 @@ static int vna_dsp_mmap(struct file *file, struct vm_area_struct *vma)
 		  size/2,
 		  vma->vm_page_prot);
 
-  /*
-  
-  uaddr = vma->vm_start;
-  printk("mmaping %d pages \n", page_count);
-  for (i = 0; i < page_count; i++) {
-    struct page *page = virt_to_page(((void *) drvdata->to_pc_buffer[0]) + i*PAGE_SIZE);
-    printk("page %pR\n", page);
-    //set_page_private(((void *) drvdata->to_pc_buffer[0]) + i*PAGE_SIZE), address);
-    //retval = vm_insert_page(vma, uaddr, page);
-    
-    printk("page %pR\n", page);
-    if (retval){
-      printk("mmap returning failure %d, page %d\n", retval, i);
-      return retval;
-    }
-    uaddr += PAGE_SIZE;
-  }
-  */
   printk("mmap done returning success\n");
   return 0;
 }
@@ -220,7 +202,7 @@ static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   u64 sr = fifo_readreg(REG_INTERRUPT);
   if(sr & 0x0001)
     wake_up_all(&drvdata->queue_read);
-  printk("VNA interrupt: sr = %llx\n", sr);
+  //printk("VNA interrupt: sr = %llx\n", sr);
   return IRQ_HANDLED;
 }
 
