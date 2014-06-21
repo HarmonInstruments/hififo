@@ -151,17 +151,15 @@ static ssize_t vna_dsp_read(struct file *filp,
 }
 
 static ssize_t vna_dsp_write(struct file *filp,
-			    const char *buf,
-			    size_t length,
-			    loff_t * off){
+			     const char *buf,
+			     size_t length,
+			     loff_t * off){
   struct hififo_dev *drvdata = filp->private_data;
   int retval;
   printk("hififo: write, a = %d, %d bytes\n", drvdata->a++, (int) length);
   length &= 0xFFFFFFFFF8;
   if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
     return -EINVAL;
-  if(length > (4*1024*1024))
-    length = 4*1024*1024;
   retval = copy_from_user(drvdata->from_pc_buffer[0], buf, length);
   fifo_writereg(length >> 3, REG_FROM_PC_ENABLE);
   return length;//-EINVAL;
@@ -180,23 +178,36 @@ static long vna_dsp_ioctl (struct file *file, unsigned int command, unsigned lon
   u64 tmp[4];
   
   switch(command) {
+    // get mmap size
   case _IOR(HIFIFO_IOC_MAGIC,0x10,u64):
     tmp[0] = 2 * BUFFER_PAGE_SIZE * (BUFFER_PAGES_TO_PC + BUFFER_PAGES_FROM_PC);
     if(copy_to_user((void *) arg, tmp, sizeof(u64)) != 0)
       return -EFAULT;
     return 0;
-  case _IOWR(HIFIFO_IOC_MAGIC,0x11, u64[2]):
+    // get bytes available in to PC FIFO
+  case _IO(HIFIFO_IOC_MAGIC,0x21):
+    return wait_bytes_in_ring_to_pc(drvdata, arg);
+    // get to PC FIFO pointer
+  case _IO(HIFIFO_IOC_MAGIC,0x22):
+    return drvdata->to_pc_pointer & (BUFFER_SIZE_TO_PC - 1);
+    // accept bytes from to PC FIFO
+  case _IO(HIFIFO_IOC_MAGIC,0x12):
+    drvdata->to_pc_pointer += arg;
+    fifo_writereg(drvdata->to_pc_pointer + (BUFFER_SIZE_TO_PC - 128), REG_TO_PC_STOP);
+    return 0;
+    // get bytes available in from PC FIFO, pointer
+  case _IOWR(HIFIFO_IOC_MAGIC,0x13, u64[2]):
     if(copy_from_user(tmp, (void *) arg, sizeof(u64)) != 0)
       return -EFAULT;
-    tmp[0] = wait_bytes_in_ring_to_pc(drvdata, tmp[0]);
-    tmp[1] = drvdata->to_pc_pointer & (BUFFER_SIZE_TO_PC - 1);
-    if(copy_to_user((void *) arg, tmp, 2*sizeof(u64)) != 0)
-      return -EFAULT;
-    return 0;
-  case _IOW(HIFIFO_IOC_MAGIC,0x12, u64):
+    
     if(copy_from_user(tmp, (void *) arg, sizeof(u64)) != 0)
       return -EFAULT;
     drvdata->to_pc_pointer += tmp[0];
+    fifo_writereg(drvdata->to_pc_pointer + (BUFFER_SIZE_TO_PC - 128), REG_TO_PC_STOP);
+    return 0;
+    // accept bytes from to PC FIFO
+  case _IO(HIFIFO_IOC_MAGIC,0x14):
+    drvdata->to_pc_pointer += arg;
     fifo_writereg(drvdata->to_pc_pointer + (BUFFER_SIZE_TO_PC - 128), REG_TO_PC_STOP);
     return 0;
   }
