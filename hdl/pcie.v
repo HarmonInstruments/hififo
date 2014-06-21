@@ -66,7 +66,6 @@ module pcie
 
    wire [19:0] write_fifo_block_count;
 
-   wire        read_fifo_active;
    wire [17:0] read_fifo_block_count;
    
    reg [3:0]   interrupt_latch = 0;
@@ -96,7 +95,7 @@ module pcie
 	if(pio_read_valid)
 	  begin
 	     case(pio_address)
-	       14'h0000: read_data <= {8'd1, 22'd0,read_fifo_active, 5'd0, interrupt_latch};
+	       14'h0000: read_data <= {8'd1, 28'd0, interrupt_latch};
 	       14'h0002: read_data <= {cpld_count, write_count, read_count};
 	       14'h0003: read_data <= {write_fifo_block_count, 7'd0};
 	       14'h0004: read_data <= {read_fifo_block_count, 9'd0};
@@ -143,7 +142,6 @@ module pcie
       // status
       .fifo_interrupt_match(interrupt[2]),
       .fifo_interrupt_done(interrupt[3]),
-      .fifo_active(read_fifo_active),
       .fifo_block_count(read_fifo_block_count), // [17:0] number of 512 byte blocks transferred
       // FIFO
       .fifo_clock(clock),
