@@ -15,6 +15,10 @@
 #define SUCCESS 0
 #define DEVICE_NAME "vna_dsp"
 
+#define HIFIFO_IOC_MAGIC 'f'
+
+#define MAX_FIFOS 8
+
 static struct pci_device_id vna_dsp_pci_table[] = {
   {VENDOR_ID, DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID, 0, 0 ,0},
   {0,}
@@ -41,11 +45,28 @@ static struct pci_device_id vna_dsp_pci_table[] = {
 
 static struct class *vna_class;
 
+struct hififo_fifo1 {
+  dma_addr_t dma_addr[BUFFER_MAX_PAGES];
+  u64 *buffer[BUFFER_MAX_PAGES];
+  u64 buffer_size;
+  u64 pointer;
+  int enabled;
+};
+
+struct hififo_fifo {
+  struct hififo_fifo1 to_pc;
+  struct hififo_fifo1 from_pc;
+  struct cdev cdev;
+};
+
 struct hififo_dev {
+  struct hififo_fifo *fifo[MAX_FIFOS];
   struct cdev hififo_cdev;
   dma_addr_t to_pc_dma_addr[BUFFER_MAX_PAGES];
   u64 to_pc_pointer;
   dma_addr_t from_pc_dma_addr[BUFFER_MAX_PAGES];
+  int to_pc_buffer_pages;
+  int from_pc_buffer_pages;
   u64 *to_pc_buffer[BUFFER_MAX_PAGES];
   u64 *from_pc_buffer[BUFFER_MAX_PAGES];
   u64 *pio_reg_base;
@@ -77,6 +98,25 @@ static int vna_dsp_release(struct inode *inode, struct file *filp){
   return SUCCESS;
 }
 
+static u64 get_bytes_in_ring_to_pc(struct hififo_dev *drvdata){
+  u64 bytes_in_buffer = (fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1);
+  return bytes_in_buffer;
+}
+
+static u64 wait_bytes_in_ring_to_pc(struct hififo_dev *drvdata, u64 desired_bytes){
+  u64 bytes_in_buffer = get_bytes_in_ring_to_pc(drvdata);
+  int retval;
+  if(bytes_in_buffer >= desired_bytes)
+    return bytes_in_buffer;
+  fifo_writereg(drvdata->to_pc_pointer + desired_bytes, REG_TO_PC_MATCH);
+  bytes_in_buffer = get_bytes_in_ring_to_pc(drvdata);
+  if(bytes_in_buffer >= desired_bytes)
+    return bytes_in_buffer;
+  retval = wait_event_interruptible_timeout(drvdata->queue_read, (get_bytes_in_ring_to_pc(drvdata) >= desired_bytes), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
+  bytes_in_buffer = get_bytes_in_ring_to_pc(drvdata);
+  return bytes_in_buffer;
+}
+
 static ssize_t vna_dsp_read(struct file *filp,
 			    char *buffer,
 			    size_t length,
@@ -86,21 +126,16 @@ static ssize_t vna_dsp_read(struct file *filp,
   size_t bytes_in_buffer;
   size_t copy_length;
   int retval;
-  //printk(KERN_INFO DEVICE_NAME ": read, %d bytes\n", (int) length);
   if((length&0x7) != 0) /* reads must be a multiple of 8 bytes */
     return -EINVAL;
   while(count != length){
     copy_length = BUFFER_PAGE_SIZE/2 - (drvdata->to_pc_pointer & (BUFFER_PAGE_SIZE/2-1));
     if(copy_length > (length-count))
       copy_length = (length-count);
-    bytes_in_buffer = (fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1);
-    //printk("%zu bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
+    bytes_in_buffer = wait_bytes_in_ring_to_pc(drvdata, copy_length);
     if(copy_length > bytes_in_buffer){
-      fifo_writereg(drvdata->to_pc_pointer + copy_length, REG_TO_PC_MATCH);
-      retval = wait_event_interruptible_timeout(drvdata->queue_read, (((fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1)) >= copy_length), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
-      //printk("wait retval = %d\n", retval);
-      bytes_in_buffer = (fifo_readreg(REG_TO_PC_COUNT) - drvdata->to_pc_pointer) & (BUFFER_SIZE_TO_PC - 1);
-      //printk("%zu bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
+      printk("%zu bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
+      return 0;
     }
     retval = copy_to_user(buffer+count, (drvdata->to_pc_pointer & (BUFFER_SIZE_TO_PC -1)) + (char *) drvdata->to_pc_buffer[0], copy_length);
     if(retval != 0){
@@ -132,32 +167,48 @@ static ssize_t vna_dsp_write(struct file *filp,
   return length;//-EINVAL;
 }
 
-#define HIFIFO_IOC_MAGIC 'f'
+struct vna_dsp_ioctl_fifostat{
+  u64 requested_bytes;
+  u64 flags;
+  u64 available_bytes;
+  u64 mmap_offset;
+};
 
 static long vna_dsp_ioctl (struct file *file, unsigned int command, unsigned long arg){
   struct hififo_dev *drvdata = file->private_data;
-  int retval;
+  //struct vna_dsp_ioctl_fifostat fifostat;
+  u64 tmp[4];
   
-  if(_IOC_TYPE(command) != HIFIFO_IOC_MAGIC) 
-    return -ENOTTY;
-    
   switch(command) {
-  case 0x10:
-    retval = 0;
-    drvdata->a = 333;
-    break;
-  default:
-    return -ENOTTY;
+  case _IOR(HIFIFO_IOC_MAGIC,0x10,u64):
+    tmp[0] = 2 * BUFFER_PAGE_SIZE * (BUFFER_PAGES_TO_PC + BUFFER_PAGES_FROM_PC);
+    if(copy_to_user((void *) arg, tmp, sizeof(u64)) != 0)
+      return -EFAULT;
+    return 0;
+  case _IOWR(HIFIFO_IOC_MAGIC,0x11, u64[2]):
+    if(copy_from_user(tmp, (void *) arg, sizeof(u64)) != 0)
+      return -EFAULT;
+    tmp[0] = wait_bytes_in_ring_to_pc(drvdata, tmp[0]);
+    tmp[1] = drvdata->to_pc_pointer & (BUFFER_SIZE_TO_PC - 1);
+    if(copy_to_user((void *) arg, tmp, 2*sizeof(u64)) != 0)
+      return -EFAULT;
+    return 0;
+  case _IOW(HIFIFO_IOC_MAGIC,0x12, u64):
+    if(copy_from_user(tmp, (void *) arg, sizeof(u64)) != 0)
+      return -EFAULT;
+    drvdata->to_pc_pointer += tmp[0];
+    fifo_writereg(drvdata->to_pc_pointer + (BUFFER_SIZE_TO_PC - 128), REG_TO_PC_STOP);
+    return 0;
   }
-  return retval;
+  return -ENOTTY;
 }
 
 static int vna_dsp_mmap(struct file *file, struct vm_area_struct *vma)
 {
   struct hififo_dev *drvdata = file->private_data;
   unsigned long size;
-  int page_count, retval, i;
-  unsigned long uaddr;
+  int retval, i, j;
+  off_t uaddr = 0;
 
   if (!(vma->vm_flags & VM_SHARED))
     return -EINVAL;
@@ -166,25 +217,35 @@ static int vna_dsp_mmap(struct file *file, struct vm_area_struct *vma)
 
   size = vma->vm_end - vma->vm_start;
 
-  if (size & ~PAGE_MASK)
-    return -EINVAL;
-  if (size > 2*BUFFER_PAGE_SIZE)
+  if (size != 2 * BUFFER_PAGE_SIZE * (BUFFER_PAGES_TO_PC + BUFFER_PAGES_FROM_PC))
     return -EINVAL;
 
-  page_count = size >> PAGE_SHIFT;
-  
-  remap_pfn_range(vma,
-		  vma->vm_start, 
-		  drvdata->to_pc_dma_addr[0] >> PAGE_SHIFT,
-		  size/2,
-		  vma->vm_page_prot);
-  remap_pfn_range(vma,
-		  vma->vm_start+size/2, 
-		  drvdata->from_pc_dma_addr[0] >> PAGE_SHIFT,
-		  size/2,
-		  vma->vm_page_prot);
-
-  printk("mmap done returning success\n");
+  /* to PC */
+  for(i=0; i<2; i++){
+    for(j=0; j<BUFFER_PAGES_TO_PC; j++){
+      retval = remap_pfn_range(vma,
+			       vma->vm_start + uaddr, 
+			       drvdata->to_pc_dma_addr[j] >> PAGE_SHIFT,
+			       BUFFER_PAGE_SIZE,
+			       vma->vm_page_prot);
+      if(retval)
+	return retval;
+      uaddr += BUFFER_PAGE_SIZE;
+    }
+  }
+  /* from PC */
+  for(i=0; i<2; i++){
+    for(j=0; j<BUFFER_PAGES_FROM_PC; j++){
+      retval = remap_pfn_range(vma,
+			       vma->vm_start + uaddr, 
+			       drvdata->from_pc_dma_addr[j] >> PAGE_SHIFT,
+			       BUFFER_PAGE_SIZE,
+			       vma->vm_page_prot);
+      if(retval)
+	return retval;
+      uaddr += BUFFER_PAGE_SIZE;
+    }
+  }
   return 0;
 }
 
