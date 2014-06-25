@@ -8,6 +8,8 @@ module pcie_rx
    output reg 	     write_valid = 0,
    output reg 	     read_valid = 0,
    output reg 	     completion_valid = 0,
+   output reg [5:0]  completion_index = 0,
+   output [7:0]      completion_tag,
    output reg [63:0] data = 0,
    output reg [12:0] address = 0,
    output reg [23:0] rid_tag = 0,
@@ -16,7 +18,9 @@ module pcie_rx
    input 	     tlast,
    input [63:0]      tdata
    );
-   
+
+   assign completion_tag = address[12:5];
+      
    reg 		     tvalid_q = 0;
    reg [63:0] 	     tdata_q = 0;
    reg 		     tlast_q = 0;
@@ -50,6 +54,11 @@ module pcie_rx
 	       end
 	     if(wait_dw23)
 	       address <= tdata_q[15:3];
+	     
+	     if(wait_dw01)
+	       completion_index <= 6'd0 - {tdata_q[40:38],3'd0};
+	     else if(wait_dw45)
+	       completion_index <= completion_index + 1'b1;
 	  end
 	if(reset || (tvalid_q && tlast_q))
 	  {wait_dw45, wait_dw23, wait_dw01} <= 3'b001;
