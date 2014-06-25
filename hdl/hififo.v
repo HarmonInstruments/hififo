@@ -5,7 +5,7 @@ module hififo_pcie
    input 	 pci_reset,
    input [15:0]  pci_id,
    // to core
-   output reg 	 interrupt_out = 0,
+   output 	 interrupt_out,
    // AXI from core
    input 	 s_axis_tx_tready,
    output [63:0] s_axis_tx_tdata,
@@ -40,7 +40,6 @@ module hififo_pcie
    wire [5:0] 	rx_rc_index;
    wire [7:0] 	rx_rc_tag;
    wire 	rx_rr_valid;
-   wire [23:0] 	rx_rr_rid_tag;
    wire 	rx_wr_valid;
    wire [63:0] 	rx_data;
    wire [12:0] 	rx_address;
@@ -52,58 +51,36 @@ module hififo_pcie
    // read completion request to TX module
    wire 	tx_rc_ready;
    reg 		tx_rc_valid = 0;
-   reg [23:0] 	tx_rc_rid_tag = 0;
+   wire [23:0] 	read_rid_tag;
    reg [3:0] 	tx_rc_lower_addr = 0;
    reg [63:0] 	tx_rc_data = 0;
    
-   wire 	fpc_rr_valid;
-   wire 	fpc_rr_ready;
-   wire [7:0] 	fpc_rr_tag = 0;
-   wire [63:0] 	fpc_rr_address = 0;
+   wire 	tx_rr_valid;
+   wire 	tx_rr_ready;
+   wire [7:0] 	tx_rr_tag;
+   wire [63:0] 	tx_request_addr;
            
-   reg 		read_done = 0;
-   reg [63:0] 	read_data = 0;
-   reg [63:0] 	ldata = 0;
-   reg [15:0] 	cpld_count = 0;
-   reg [15:0] 	write_count = 0;
-   reg [15:0] 	read_count = 0;
-      
-   reg [3:0] 	interrupt_latch = 0;
-   reg [3:0] 	interrupt_enable = 0;
-   wire [3:0] 	interrupt = 0;
+   wire [63:0] 	read_data;
+   wire 	read_done;
+
+   wire [`TPC_CH-1:0] tpc_reset;
+   wire [`TPC_CH-1:0] tpc_ready;
+   wire [`TPC_CH-1:0] tpc_read;
+   wire [8:0] 	      tpc_read_address;
+   
+   wire [`FPC_CH-1:0] fpc_reset;
+   wire [`FPC_CH-1:0] fpc_rr_valid;
+   wire [`FPC_CH-1:0] fpc_rr_ready;
+   
+   wire 	      tx_wr_valid;
+   wire 	      tx_wr_ready;
+   wire [63:0] 	      tx_wr_data;
    
    // PIO control
    always @ (posedge clock)
      begin
-	if(rx_wr_valid)
-	  begin
-	     case(rx_address)
-	       0: interrupt_enable <= rx_data[3:0];
-	     endcase
-	  end
-	if(rx_rc_valid)
-	  ldata <= rx_data;
-
-	cpld_count <= cpld_count + rx_rc_valid;
-	read_count <= read_count + rx_rr_valid;
-	write_count <= write_count + rx_wr_valid;
-	interrupt_latch <= (rx_rr_valid && rx_address == 0) ? 1'b0 : interrupt_latch | interrupt;
-	interrupt_out <= (interrupt & interrupt_enable) != 0;
-	
 	if(rx_rr_valid)
-	  begin
-	     case(rx_address)
-	       14'h0000: read_data <= {8'd1, 28'd0, interrupt_latch};
-	       14'h0002: read_data <= {cpld_count, write_count, read_count};
-	       //14'h0003: read_data <= {write_fifo_block_count, 7'd0};
-	       //14'h0004: read_data <= {read_fifo_block_count, 9'd0};
-	       14'h0007: read_data <= ldata;
-	       default: read_data <= 64'h0;
-	     endcase
-	     tx_rc_rid_tag <= rx_rr_rid_tag;
-	     tx_rc_lower_addr <= rx_address[3:0];
-	  end
-	read_done <= rx_rr_valid;
+	  tx_rc_lower_addr <= rx_address[3:0];
 	if(read_done)
 	  begin
 	     tx_rc_data <= read_data;
@@ -112,10 +89,40 @@ module hififo_pcie
 	else if(tx_rc_ready)
 	  tx_rc_valid <= 1'b0;
      end
+      
+   hififo_controller hififo_controller
+     (.clock(clock),
+      .pci_reset(pci_reset),
+      // PIO
+      .pio_write_valid(rx_wr_valid),
+      .pio_read_valid(rx_rr_valid),
+      .pio_write_data(rx_data),
+      .pio_address(rx_address),
+      .pio_read_data(read_data),
+      .pio_read_done(read_done),
+      // common
+      .request_addr(tx_request_addr),
+      // to PC (tpc)
+      .tpc_reset(tpc_reset),
+      .tx_wr_valid(tx_wr_valid),
+      .tx_wr_ready(tx_wr_ready),
+      .tpc_ready(tpc_ready),
+      .tpc_read(tpc_read),
+      .tpc_read_address(tpc_read_address),
+      // from PC (fpc)
+      .fpc_reset(fpc_reset),
+      .tx_rr_valid(tx_rr_valid),
+      .tx_rr_tag(tx_rr_tag),
+      .tx_rr_ready(tx_rr_ready),
+      .fpc_rr_valid(fpc_rr_valid),
+      .fpc_rr_ready(fpc_rr_ready),
+      // status
+      .interrupt(interrupt_out)
+      );
    
    pcie_from_pc_fifo fpc0_fifo
      (.clock(clock),
-      .reset(pci_reset),
+      .reset(fpc_reset[0]),
       .channel(3'd0),
       // read completion
       .completion_valid(rx_rc_valid),
@@ -131,20 +138,15 @@ module hififo_pcie
       .fifo_read_data(fpc0_data),
       .fifo_read_valid(fpc0_empty)
       );
-
-   wire        tx_wr_valid = 0;
-   wire [63:0] tx_wr_addr = 0;
-   wire        tx_wr_ready;
-   wire [63:0] tx_wr_data;
       
    hififo_tpc_fifo tpc0_fifo
      (.clock(clock),
-      .reset(tpc0_reset),
+      .reset(tpc_reset[0]),
       .channel(3'd0),
-      .ready_for_read(),
-      .read_address(),
+      .ready_for_read(tpc_ready),
+      .read_address(tpc_read_address),
       .read_data(tx_wr_data),
-      .read(),
+      .read(tpc_read[0]),
       .fifo_clock(tpc0_clock),
       .fifo_data(tpc0_data),
       .fifo_write(tpc0_write),
@@ -162,7 +164,7 @@ module hififo_pcie
       .completion_tag(rx_rc_tag),
       .data(rx_data),
       .address(rx_address),
-      .rid_tag(rx_rr_rid_tag),
+      .rid_tag(read_rid_tag),
       // AXI stream from PCIE core
       .tvalid(m_axis_rx_tvalid),
       .tlast(m_axis_rx_tlast),
@@ -173,20 +175,19 @@ module hififo_pcie
      (.clock(clock),
       .reset(pci_reset),
       .pcie_id(pci_id),
+      .request_addr(tx_request_addr),
       // read completion (rc)
       .rc_valid(tx_rc_valid),
-      .rc_rid_tag(tx_rc_rid_tag), // 24
+      .rc_rid_tag(read_rid_tag), // 24
       .rc_lower_addr(tx_rc_lower_addr),// 4
       .rc_data(tx_rc_data),
       .rc_ready(tx_rc_ready),
       // read request (rr)
-      .rr_valid(fpc_rr_valid),
-      .rr_ready(fpc_rr_ready),
-      .rr_addr(fpc_rr_address),
-      .rr_tag(fpc_rr_tag),
+      .rr_valid(tx_rr_valid),
+      .rr_ready(tx_rr_ready),
+      .rr_tag(tx_rr_tag),
       // write request (wr)
       .wr_valid(tx_wr_valid),
-      .wr_addr(tx_wr_addr),
       .wr_ready(tx_wr_ready),
       .wr_data(tx_wr_data),
       // AXI stream to PCI Express core

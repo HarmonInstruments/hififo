@@ -50,7 +50,8 @@ module pcie_rx
 		  is_write_32 <= tdata_q[30:24] == 7'b1000000;
 		  is_cpld <= tdata_q[30:24] == 7'b1001010;
 		  is_read_32_2dw <= (tdata_q[30:24] == 7'b0000000) && (tdata_q[9:0] == 10'd2);
-		  rid_tag <= tdata_q[63:40];
+		  if(tdata_q[30:24] == 7'b1001010)
+		    rid_tag <= tdata_q[63:40];
 	       end
 	     if(wait_dw23)
 	       address <= tdata_q[15:3];
