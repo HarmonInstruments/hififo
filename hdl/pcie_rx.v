@@ -12,7 +12,7 @@ module pcie_rx
    output [7:0]      completion_tag,
    output reg [63:0] data = 0,
    output reg [12:0] address = 0,
-   output reg [23:0] rid_tag = 0,
+   output 	     rr_rc_dw2,
    // AXI stream from PCIE core
    input 	     tvalid,
    input 	     tlast,
@@ -31,7 +31,10 @@ module pcie_rx
    reg 		     is_write_32 = 0;
    reg 		     is_cpld = 0;
    reg 		     is_read_32_2dw = 0;
-            
+   reg [23:0] 	     rid_tag = 0;
+   reg [3:0] 	     rr_rc_lower_addr = 0;
+   assign rr_rc_dw2 = {rid_tag, 1'b0, rr_rc_lower_addr, 3'd0};
+   
    // receive
    always @ (posedge clock)
      begin
@@ -54,8 +57,11 @@ module pcie_rx
 		    rid_tag <= tdata_q[63:40];
 	       end
 	     if(wait_dw23)
-	       address <= tdata_q[15:3];
-	     
+	       begin
+		  address <= tdata_q[15:3];
+		  if(is_read_32_2dw)
+		    rr_rc_lower_addr <= tdata_q[6:3];
+	       end
 	     if(wait_dw01)
 	       completion_index <= 6'd0 - {tdata_q[40:38],3'd0};
 	     else if(wait_dw45)

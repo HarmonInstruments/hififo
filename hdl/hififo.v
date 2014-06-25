@@ -47,13 +47,10 @@ module hififo_pcie
    assign pio_write_data = rx_data;
    assign pio_write_valid = rx_wr_valid;
    assign pio_address = rx_address;
-      
+   
    // read completion request to TX module
-   wire 	tx_rc_ready;
-   reg 		tx_rc_valid = 0;
-   wire [23:0] 	read_rid_tag;
-   reg [3:0] 	tx_rc_lower_addr = 0;
-   reg [63:0] 	tx_rc_data = 0;
+   wire [31:0] 	tx_rc_dw2;
+   wire [63:0] 	tx_rc_data;
    
    wire 	tx_rr_valid;
    wire 	tx_rr_ready;
@@ -63,32 +60,18 @@ module hififo_pcie
    wire [63:0] 	read_data;
    wire 	read_done;
 
-   wire [`TPC_CH-1:0] tpc_reset;
-   wire [`TPC_CH-1:0] tpc_ready;
-   wire [`TPC_CH-1:0] tpc_read;
-   wire [8:0] 	      tpc_read_address;
+   wire [0:0] 	tpc_reset;
+   wire [0:0] 	tpc_ready;
+   wire [0:0] 	tpc_read;
+   wire [8:0] 	tpc_read_address;
    
-   wire [`FPC_CH-1:0] fpc_reset;
-   wire [`FPC_CH-1:0] fpc_rr_valid;
-   wire [`FPC_CH-1:0] fpc_rr_ready;
+   wire [0:0] 	fpc_reset;
+   wire [0:0] 	fpc_rr_valid;
+   wire [0:0] 	fpc_rr_ready;
    
    wire 	      tx_wr_valid;
    wire 	      tx_wr_ready;
    wire [63:0] 	      tx_wr_data;
-   
-   // PIO control
-   always @ (posedge clock)
-     begin
-	if(rx_rr_valid)
-	  tx_rc_lower_addr <= rx_address[3:0];
-	if(read_done)
-	  begin
-	     tx_rc_data <= read_data;
-	     tx_rc_valid <= 1'b1;
-	  end
-	else if(tx_rc_ready)
-	  tx_rc_valid <= 1'b0;
-     end
       
    hififo_controller hififo_controller
      (.clock(clock),
@@ -98,7 +81,7 @@ module hififo_pcie
       .pio_read_valid(rx_rr_valid),
       .pio_write_data(rx_data),
       .pio_address(rx_address),
-      .pio_read_data(read_data),
+      .pio_read_data(tx_rc_data),
       .pio_read_done(read_done),
       // common
       .request_addr(tx_request_addr),
@@ -164,7 +147,7 @@ module hififo_pcie
       .completion_tag(rx_rc_tag),
       .data(rx_data),
       .address(rx_address),
-      .rid_tag(read_rid_tag),
+      .rr_rc_dw2(tx_rc_dw2),
       // AXI stream from PCIE core
       .tvalid(m_axis_rx_tvalid),
       .tlast(m_axis_rx_tlast),
@@ -177,11 +160,9 @@ module hififo_pcie
       .pcie_id(pci_id),
       .request_addr(tx_request_addr),
       // read completion (rc)
-      .rc_valid(tx_rc_valid),
-      .rc_rid_tag(read_rid_tag), // 24
-      .rc_lower_addr(tx_rc_lower_addr),// 4
+      .rc_done(read_done),
+      .rc_dw2(tx_rc_dw2),
       .rc_data(tx_rc_data),
-      .rc_ready(tx_rc_ready),
       // read request (rr)
       .rr_valid(tx_rr_valid),
       .rr_ready(tx_rr_ready),

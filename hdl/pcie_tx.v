@@ -5,11 +5,9 @@ module pcie_tx
    input [15:0]      pcie_id,
    input [63:0]      request_addr,
    // read completion (rc)
-   input 	     rc_valid,
-   input [23:0]      rc_rid_tag,
-   input [3:0] 	     rc_lower_addr,
+   input 	     rc_done,
+   input [31:0]      rc_dw2,
    input [63:0]      rc_data,
-   output 	     rc_ready,
    // read request (rr)
    input 	     rr_valid,
    input [7:0] 	     rr_tag,
@@ -31,6 +29,9 @@ module pcie_tx
       es = {x[7:0], x[15:8], x[23:16], x[31:24]};
    endfunction
 
+   reg 		     rc_valid;
+   wire 	     rc_ready;
+   
    reg [63:0] 	     wr_data_q;
    reg [4:0] 	     state = 0;
    wire 	     is_32 = request_addr[63:32] == 0;
@@ -42,6 +43,12 @@ module pcie_tx
    
    always @(posedge clock)
      begin
+	if(reset)
+	  rc_valid <= 1'b0;
+	else if(rc_done)
+	  rc_valid <= 1'b1;
+	else if(rc_ready)
+	  rc_valid <= 1'b0;
 	tx_tvalid <= reset ? 1'b0 : (state != 0);
 	if(reset)
 	  state <= 5'd0;
@@ -59,7 +66,7 @@ module pcie_tx
 	       0: tx_tdata <= 64'h0;
 	       // read completion (rc)
 	       1: tx_tdata <= {pcie_id, 16'd8, 32'h4A000002}; // always 2 DW
-	       2: tx_tdata <= {es(rc_data[31:0]), rc_rid_tag, 1'b0, rc_lower_addr, 3'd0}; // rc DW3, DW2
+	       2: tx_tdata <= {es(rc_data[31:0]), rc_dw2}; // rc DW3, DW2
 	       3: tx_tdata <= {32'h0, es(rc_data[63:32])}; // rc DW4
 	       // read request (rr)
 	       4: tx_tdata <= {pcie_id, rr_tag[7:0], 8'hFF, 2'd0, ~is_32, 29'd128}; // always 128 DW

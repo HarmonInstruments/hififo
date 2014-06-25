@@ -33,7 +33,8 @@ class PCIe_host():
         self.txqueue.put([0xbeef00ff00000002 | tag << 40, 0])
         self.txqueue.put([address, 1])
         print "self.txqueue.qsize() = {}".format(self.txqueue.qsize())
-
+    def complete(self, address):
+        print "a"
     def do_read(self, address):
         self.txqueue.put(["read", address])
     def request(self):
@@ -107,7 +108,7 @@ def _test_hififo():
     r_tlast = Signal(bool(0))
     r_tdata = Signal(intbv(0, min=0, max=2**64-1))
     tpc0_data = Signal(intbv(0, min=0, max=2**64-1))
-    tpc0_write = Signal(bool(0))
+    tpc0_write = Signal(bool(1))
     fpc0_read = Signal(bool(0))
     # from core
     interrupt = Signal(bool(0))
@@ -130,7 +131,10 @@ def _test_hififo():
         p.docycle(reset, t_tdata, t_1dw, t_tlast, t_tvalid, t_tready, r_tvalid, r_tlast, r_tdata)
         if(reset):
             p.reset()
-            
+            tpc0_data.next = 0
+        else:
+            if tpc0_ready:
+                tpc0_data.next = tpc0_data + 1
     @instance
     def check():
         for i in range(6):
