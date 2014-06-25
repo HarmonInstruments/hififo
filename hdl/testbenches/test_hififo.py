@@ -4,7 +4,10 @@ import sys, os, random, Queue
 from myhdl import *
  
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, tpc0_data, tpc0_write, fpc0_read, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid, tpc0_ready, fpc0_data, fpc0_empty):
-    os.system ("iverilog -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../sync_gray.v ../pcie_rx.v ../pcie_tx.v")
+    r = os.system ("iverilog -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../sync_gray.v ../pcie_rx.v ../pcie_tx.v ../hififo_controller.v")
+    if(r!=0):
+        print "iverilog returned ", r
+        exit(1)
     cmd = "vvp -v -m /home/dlharmon/software/myhdl.vpi tb_hififo.vvp"
     return Cosimulation(cmd,**locals())
  
