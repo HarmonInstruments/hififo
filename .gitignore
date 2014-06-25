@@ -2,4 +2,7 @@
 *.log
 *~
 *.bin
+*.vcd
+*.pyc
+*.out
 xbuild
