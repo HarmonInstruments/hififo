@@ -120,7 +120,7 @@ module vna_dsp
       .clock(clock),
       .pci_id(pci_id),
       .interrupt(interupt),
-      .pcie_reset(pcie_reset),
+      .pci_reset(pci_reset),
       .s_axis_tx_tready(s_axis_tx_tready),
       .s_axis_tx_tdata(s_axis_tx_tdata),
       .s_axis_tx_1dw(s_axis_tx_1dw),

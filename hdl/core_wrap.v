@@ -11,7 +11,7 @@ module pcie_core_wrap
    //
    output [15:0] pci_id,
    input 	 interrupt,
-   output 	 pcie_reset,
+   output reg 	 pci_reset = 1,
    output 	 clock,
    // AXI to core
    output 	 s_axis_tx_tready,
@@ -30,14 +30,13 @@ module pcie_core_wrap
    wire 	cfg_to_turnoff;
    wire 	sys_rst_n_c;
    wire 	sys_clk;
-   reg 		pcie_reset = 1'b1;
    reg 		cfg_turnoff_ok = 0;
    wire 	cfg_interrupt_rdy;
    reg 		cfg_interrupt = 0;
    
    always @(posedge clock) 
      begin
-	pcie_reset <= user_reset | ~user_lnk_up;
+	pci_reset <= user_reset | ~user_lnk_up;
 	// fix this
    	cfg_turnoff_ok <= cfg_to_turnoff; // not if a completion is pending
 	if((interrupt) != 0)

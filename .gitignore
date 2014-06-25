@@ -2,6 +2,7 @@
 *.log
 *~
 *.bin
+*.vvp
 *.vcd
 *.pyc
 *.out

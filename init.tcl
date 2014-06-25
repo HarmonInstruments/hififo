@@ -13,6 +13,8 @@ launch_run -jobs 8 pcie_7x_0_synth_1
 
 set_property STEPS.WRITE_BITSTREAM.ARGS.BIN_FILE true [get_runs impl_1]
 
+set_msg_config -suppress -id {filemgmt 20-1763}
+
 launch_runs impl_1 -to_step write_bitstream
 wait_on_run impl_1
 exit
