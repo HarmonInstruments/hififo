@@ -14,12 +14,13 @@ module pcie_from_pc_fifo
    // FIFO
    input 	     fifo_clock, // for all FIFO signals
    input 	     fifo_read,
-   output reg [63:0] fifo_read_data = 0,
+   output reg [63:0] fifo_read_data,
    output reg 	     fifo_read_valid = 0
    );
 
    // clock
    reg [63:0] 	     fifo_bram [511:0];
+   reg [63:0] 	     fifo_bram_oreg;
    reg [7:0] 	     block_filled = 0;
    wire [2:0] 	     p_read;
    reg [2:0] 	     p_write = 0;
@@ -59,10 +60,13 @@ module pcie_from_pc_fifo
    gray_sync_3 sync1(.clock_in(fifo_clock), .in(p_read_fclk[8:6]), .clock_out(clock), .out(p_read));
    sync sync_reset(.clock(clock), .in(reset), .out(reset_fclk));
    assign p_write_fclk[5:0] = 6'd0;
+   reg 		  read_valid_q = 0;
    wire 	  read_valid = fifo_read && (p_read_fclk != p_write_fclk);
    
    always @ (posedge fifo_clock)
      begin
+	fifo_bram_oreg <= fifo_bram[p_read_fclk];
+	fifo_read_data <= fifo_bram_oreg;
 	if(reset_fclk)
 	  begin
 	     fifo_read_valid <= 1'b0;
@@ -70,9 +74,9 @@ module pcie_from_pc_fifo
 	  end
 	else
 	  begin
-	     fifo_read_data <= fifo_bram[p_read_fclk];
 	     p_read_fclk <= p_read_fclk + read_valid;
-	     fifo_read_valid <= read_valid;
+	     read_valid_q <= read_valid;
+	     fifo_read_valid <= read_valid_q;
 	  end
      end
 endmodule

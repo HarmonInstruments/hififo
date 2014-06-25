@@ -12,7 +12,7 @@ module pcie_rx
    output [7:0]      completion_tag,
    output reg [63:0] data = 0,
    output reg [12:0] address = 0,
-   output 	     rr_rc_dw2,
+   output [31:0]     rr_rc_dw2,
    // AXI stream from PCIE core
    input 	     tvalid,
    input 	     tlast,

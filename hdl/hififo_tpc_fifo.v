@@ -27,7 +27,7 @@ module hififo_tpc_fifo
    
    always @ (posedge clock)
      begin
-	read_data <= read ? fifo[read_address] : 64'h0;
+	read_data <= fifo[read_address];
 	if(reset)
 	  p_out <= 1'b0;
 	else if(read)
