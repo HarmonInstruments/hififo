@@ -18,12 +18,3 @@ set_property PACKAGE_PIN A9  [get_ports {led[2]}]
 set_property PACKAGE_PIN A8  [get_ports {led[3]}]
 set_property DRIVE 4 [get_ports led*]
 set_property SLEW SLOW [get_ports led*]
-
-   output [3:0]     pcie_txp,
-   output [3:0]     pcie_txn,
-   input [3:0]      pcie_rxp,
-   input [3:0]      pcie_rxn,
-   input            pcie_refclk_p,
-   input            pcie_refclk_n,
-   input            pcie_rst_n,
-   output reg [3:0] led = 4'h5

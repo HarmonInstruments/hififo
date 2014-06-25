@@ -9,10 +9,10 @@ module pcie_core_wrap
    input 	 sys_clk_n,
    input 	 sys_rst_n,
    //
-   output [15:0] pcie_id,
+   output [15:0] pci_id,
    input 	 interrupt,
    output 	 pcie_reset,
-   output 	 clock
+   output 	 clock,
    // AXI to core
    output 	 s_axis_tx_tready,
    input [63:0]  s_axis_tx_tdata,
@@ -90,9 +90,9 @@ module pcie_core_wrap
       .cfg_status(), .cfg_to_turnoff(cfg_to_turnoff),
       .cfg_received_func_lvl_rst(),
       .cfg_dcommand(),
-      .cfg_bus_number(pcie_id[15:8]),
-      .cfg_device_number(pcie_id[7:3]),      
-      .cfg_function_number(pcie_id[2:0]),
+      .cfg_bus_number(pci_id[15:8]),
+      .cfg_device_number(pci_id[7:3]),      
+      .cfg_function_number(pci_id[2:0]),
       .cfg_command(),
       .cfg_dstatus(),
       .cfg_lstatus(),

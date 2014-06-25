@@ -57,14 +57,14 @@ module vna_dsp
    wire 	    m_axis_rx_tlast;
    wire [63:0] 	    m_axis_rx_tdata;
 		    
-   pcie pcie
+   hififo_pcie hififo
      (.clock(clock),
       .pci_reset(pci_reset),
       .pci_id(pci_id),
       .interrupt_out(interrupt),
       .s_axis_tx_tready(s_axis_tx_tready),
       .s_axis_tx_tdata(s_axis_tx_tdata),
-      .s_axis_tx_tkeep(s_axis_tx_1dw)
+      .s_axis_tx_1dw(s_axis_tx_1dw),
       .s_axis_tx_tlast(s_axis_tx_tlast),
       .s_axis_tx_tvalid(s_axis_tx_tvalid),
       .m_axis_rx_tvalid(m_axis_rx_tvalid),
@@ -123,7 +123,7 @@ module vna_dsp
       .pcie_reset(pcie_reset),
       .s_axis_tx_tready(s_axis_tx_tready),
       .s_axis_tx_tdata(s_axis_tx_tdata),
-      .s_axis_tx_1dw(s_axis_tx_1dw)
+      .s_axis_tx_1dw(s_axis_tx_1dw),
       .s_axis_tx_tlast(s_axis_tx_tlast),
       .s_axis_tx_tvalid(s_axis_tx_tvalid),
       .m_axis_rx_tvalid(m_axis_rx_tvalid),
