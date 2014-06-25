@@ -19,6 +19,11 @@ module pcie_rx
    input [63:0]      tdata
    );
 
+   function [31:0] es; // endian swap
+      input [31:0]   x;
+      es = {x[7:0], x[15:8], x[23:16], x[31:24]};
+   endfunction   
+
    assign completion_tag = address[12:5];
       
    reg 		     tvalid_q = 0;
@@ -43,10 +48,7 @@ module pcie_rx
 	tdata_q <= tdata;
 	if(tvalid_q)
 	  begin
-	     data[15: 0] <= {previous_dw[23:16], previous_dw[31:24]}; // endian swap
-	     data[31:16] <= {previous_dw[ 7: 0], previous_dw[15: 8]};
-	     data[47:32] <= {tdata_q[23:16], tdata_q[31:24]};
-	     data[63:48] <= {tdata_q[ 7: 0], tdata_q[15: 8]};
+	     data <= {es(tdata_q[31:0]), es(previous_dw[31:0])};
 	     previous_dw <= tdata_q[63:32];
 	     if(wait_dw01)
 	       begin
