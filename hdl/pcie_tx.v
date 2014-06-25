@@ -37,7 +37,7 @@ module pcie_tx
    wire 	     rr_32 = rr_addr[63:32] == 0;
    wire 	     wr_32 = wr_addr[63:32] == 0;
    wire 	     last = (state == 3) || (state == 5) || (state == 23);
-   wire [4:0] 	     state_next = rc_valid ? 3'd1 : (rr_valid ? 3'd4 : (wr_valid ? 3'd6 : 3'd0));
+   wire [4:0] 	     state_next = (rc_valid & (state != 3)) ? 3'd1 : (rr_valid ? 3'd4 : (wr_valid ? 3'd6 : 3'd0));
    assign rc_ready = (tx_tready | ~tx_tvalid) && (state == 3);
    assign rr_ready = (tx_tready | ~tx_tvalid) && (state == 5);
    assign wr_ready = (tx_tready | ~tx_tvalid) && (state > 6) && (state < 23);
@@ -47,7 +47,7 @@ module pcie_tx
 	tx_tvalid <= reset ? 1'b0 : (state != 0);
 	if(reset)
 	  state <= 5'd0;
-	else if((tx_tready | ~tx_tvalid) && last)
+	else if((tx_tready | ~tx_tvalid) && (last || (state == 0)))
 	  state <= state_next;
 	else if((tx_tready | ~tx_tvalid) && (state != 0))
 	  state <= state + 1'b1;
