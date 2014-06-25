@@ -1,4 +1,5 @@
 *.jou
 *.log
 *~
+*.bin
 xbuild

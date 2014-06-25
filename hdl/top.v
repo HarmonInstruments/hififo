@@ -18,13 +18,13 @@
 
 module vna_dsp
   (
-   output [3:0]     pci_exp_txp,
-   output [3:0]     pci_exp_txn,
-   input [3:0] 	    pci_exp_rxp,
-   input [3:0] 	    pci_exp_rxn,
-   input 	    sys_clk_p,
-   input 	    sys_clk_n,
-   input 	    sys_rst_n,
+   output [3:0]     pcie_txp,
+   output [3:0]     pcie_txn,
+   input [3:0] 	    pcie_rxp,
+   input [3:0] 	    pcie_rxn,
+   input 	    pcie_refclk_p,
+   input 	    pcie_refclk_n,
+   input 	    pcie_rst_n,
    output reg [3:0] led = 4'h5
    );
 
@@ -34,39 +34,57 @@ module vna_dsp
    wire [63:0] 	    pio_write_data;
    wire [12:0] 	    pio_address;
       
-   reg [63:0] 	    fifo_to_pc_data = 0;
-   reg 		    fifo_to_pc_write = 0;
-   wire 	    fifo_to_pc_almost_full;
+   reg [63:0] 	    tpc_data = 0;
+   reg 		    tpc_write = 0;
+   wire 	    tpc_ready;
 
-   wire [63:0] 	    fifo_from_pc_data;
-   wire 	    fifo_from_pc_read = 1'b1;
-   wire 	    fifo_from_pc_empty;
-         
+   wire [63:0] 	    fpc_data;
+   wire 	    fpc_read = 1'b1;
+   wire 	    fpc_empty;
+
+   wire 	    pci_reset;
+   wire [15:0] 	    pci_id;
+   // to core
+   wire 	    interrupt;
+   // AXI from core
+   wire 	    s_axis_tx_tready;
+   wire [63:0] 	    s_axis_tx_tdata;
+   wire  	    s_axis_tx_1dw;
+   wire 	    s_axis_tx_tlast;
+   wire 	    s_axis_tx_tvalid;
+   // AXI from core
+   wire 	    m_axis_rx_tvalid;
+   wire 	    m_axis_rx_tlast;
+   wire [63:0] 	    m_axis_rx_tdata;
+		    
    pcie pcie
-     (.pci_exp_txp(pci_exp_txp),
-      .pci_exp_txn(pci_exp_txn),
-      .pci_exp_rxp(pci_exp_rxp),
-      .pci_exp_rxn(pci_exp_rxn),
-      .sys_clk_p(sys_clk_p),
-      .sys_clk_n(sys_clk_n),
-      .sys_rst_n(sys_rst_n),
-      .pio_clock(clock),
+     (.clock(clock),
+      .pci_reset(pci_reset),
+      .pci_id(pci_id),
+      .interrupt_out(interrupt),
+      .s_axis_tx_tready(s_axis_tx_tready),
+      .s_axis_tx_tdata(s_axis_tx_tdata),
+      .s_axis_tx_tkeep(s_axis_tx_1dw)
+      .s_axis_tx_tlast(s_axis_tx_tlast),
+      .s_axis_tx_tvalid(s_axis_tx_tvalid),
+      .m_axis_rx_tvalid(m_axis_rx_tvalid),
+      .m_axis_rx_tlast(m_axis_rx_tlast),
+      .m_axis_rx_tdata(m_axis_rx_tdata),
       .pio_write_valid(pio_write_valid),
-      .pio_read_valid(),
       .pio_write_data(pio_write_data),
       .pio_address(pio_address),
-      .pio_read_data(64'h0),
-      .pio_read_data_valid(1'b0),      
-      .fifo_clock(clock),
-      .fifo_reset(),
-      .fifo_to_pc_data(fifo_to_pc_data),
-      .fifo_to_pc_write(fifo_to_pc_write),
-      .fifo_to_pc_almost_full(fifo_to_pc_almost_full),
-      .fifo_from_pc_data(fifo_from_pc_data),
-      .fifo_from_pc_read(fifo_from_pc_read),
-      .fifo_from_pc_empty(fifo_from_pc_empty)
+      .tpc0_clock(clock),
+      .tpc0_reset(),
+      .tpc0_data(tpc_data),
+      .tpc0_write(tpc_write),
+      .tpc0_ready(tpc_almost_full),
+      .fpc0_clock(clock),
+      .fpc0_reset(),
+      .fpc0_data(fpc_data),
+      .fpc0_read(fpc_read),
+      .fpc0_empty(fpc_empty)
       );
-
+   
    reg 		    use_count = 1;
       
    always @ (posedge clock)
@@ -76,21 +94,40 @@ module vna_dsp
 	if(pio_write_valid && (pio_address == 15))
 	  use_count <= pio_write_data[0];
 	
-	if(~fifo_from_pc_empty & ~use_count)
+	if(~fpc_empty & ~use_count)
 	  begin
-	     fifo_to_pc_write <= 1'b1;
-	     fifo_to_pc_data <= fifo_from_pc_data;
+	     tpc_write <= 1'b1;
+	     tpc_data <= fpc_data;
 	  end
-	else if(~fifo_to_pc_almost_full)
+	else if(tpc_ready)
 	  begin
-	     fifo_to_pc_write <= 1'b1;
-	     fifo_to_pc_data <= fifo_to_pc_data + 1'b1;
+	     tpc_write <= 1'b1;
+	     tpc_data <= tpc_data + 1'b1;
 	  end
 	else
 	  begin
-	     fifo_to_pc_write <= 1'b0;
+	     tpc_write <= 1'b0;
 	  end
      end
-      
+   pcie_core_wrap pcie_core_wrap
+     (.pci_exp_txp(pcie_txp),
+      .pci_exp_txn(pcie_txn),
+      .pci_exp_rxp(pcie_rxp),
+      .pci_exp_rxn(pcie_rxn),
+      .sys_clk_p(pcie_refclk_p),
+      .sys_clk_n(pcie_refclk_n),
+      .sys_rst_n(pcie_rst_n),
+      .clock(clock),
+      .pci_id(pci_id),
+      .interrupt(interupt),
+      .pcie_reset(pcie_reset),
+      .s_axis_tx_tready(s_axis_tx_tready),
+      .s_axis_tx_tdata(s_axis_tx_tdata),
+      .s_axis_tx_1dw(s_axis_tx_1dw)
+      .s_axis_tx_tlast(s_axis_tx_tlast),
+      .s_axis_tx_tvalid(s_axis_tx_tvalid),
+      .m_axis_rx_tvalid(m_axis_rx_tvalid),
+      .m_axis_rx_tlast(m_axis_rx_tlast),
+      .m_axis_rx_tdata(m_axis_rx_tdata)
+      );   
 endmodule
-
