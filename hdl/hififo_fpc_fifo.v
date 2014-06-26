@@ -66,8 +66,8 @@ module pcie_from_pc_fifo
 	     block_filled[6] <= (write_last && (rc_tag == 6)) || ((p_write == 6) ? 1'b0 : block_filled[6]);
 	     block_filled[7] <= (write_last && (rc_tag == 7)) || ((p_write == 7) ? 1'b0 : block_filled[7]);
 	  end
-	p_stop <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 16) ? pio_wdata[25:9] : p_stop);
-	p_int <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 17) ? pio_wdata[25:9] : p_int);
+	p_stop <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 6) ? pio_wdata[25:9] : p_stop);
+	p_int <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 7) ? pio_wdata[25:9] : p_int);
 	p_read <= reset ? 1'b0 : p_read + p_read_inc128;
 	p_write <= reset ? 1'b0 : p_write + block_filled[p_write[2:0]];
 	p_request <= reset ? 1'b0 : p_request + rr_ready;
