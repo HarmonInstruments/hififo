@@ -79,17 +79,21 @@ module hififo_pcie
    pcie_from_pc_fifo fpc0_fifo
      (.clock(clock),
       .reset(pci_reset),
-      .channel(3'd0),
+      .interrupt(),
+      // PIO
+      .pio_wvalid(rx_wr_valid),
+      .pio_wdata(rx_data),
+      .pio_addr(rx_address),
       // read completion
       .completion_valid(rx_rc_valid),
       .completion_tag(rx_rc_tag),
       .completion_index(rx_rc_index),
       .completion_data(rx_data),
       // read request
-      .read_request_valid(tx_rr_valid),
-      .read_request_ready(tx_rr_ready),
-      //   .tx_rr_tag(tx_rr_tag),
-      //   .tx_rr_addr(tx_rr_addr),    
+      .rr_valid(tx_rr_valid),
+      .rr_ready(tx_rr_ready),
+      .rr_tag(tx_rr_tag),
+      .rr_addr(tx_rr_addr),    
       // FIFO
       .fifo_clock(fifo_clock),
       .fifo_read(fpc0_read),
@@ -100,6 +104,7 @@ module hififo_pcie
    hififo_tpc_fifo tpc0_fifo
      (.clock(clock),
       .reset(pci_reset),
+      .interrupt(),
       // PIO
       .pio_wvalid(rx_wr_valid),
       .pio_wdata(rx_data),
