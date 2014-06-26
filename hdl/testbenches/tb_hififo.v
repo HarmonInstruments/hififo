@@ -43,12 +43,11 @@ module tb_hififo_pcie;
       .m_axis_rx_tlast(r_tlast),
       .m_axis_rx_tdata(r_tdata),
       // FIFOs
-      .tpc0_clock(clock),
+      .fifo_clock(clock),
       .tpc0_reset(),
       .tpc0_data(tpc0_data),
       .tpc0_write(tpc0_write),
       .tpc0_ready(tpc0_ready),
-      .fpc0_clock(clock),
       .fpc0_reset(),
       .fpc0_data(fpc0_data),
       .fpc0_read(fpc0_read),

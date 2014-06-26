@@ -4,7 +4,7 @@ import sys, os, random, Queue
 from myhdl import *
  
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, tpc0_data, tpc0_write, fpc0_read, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid, tpc0_ready, fpc0_data, fpc0_empty):
-    r = os.system ("iverilog -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../sync_gray.v ../pcie_rx.v ../pcie_tx.v ../hififo_controller.v")
+    r = os.system ("iverilog -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../sync_gray.v ../pcie_rx.v ../pcie_tx.v")
     if(r!=0):
         print "iverilog returned ", r
         exit(1)
@@ -18,6 +18,9 @@ def endianswap(x):
     y |= (x&0xFF0000) >> 8
     y |= (x&0xFF000000) >> 24
     return y
+
+def combine2dw(l,h):
+    return (l & 0xFFFFFFFF) | ((h & 0xFFFFFFFF) << 32)
 
 class PCIe_host():
     def __init__(self):
@@ -47,7 +50,6 @@ class PCIe_host():
             return
         try:
             a = self.txqueue.get(False)
-            print "writing TLP"
             r_tvalid.next = 1
             r_tdata.next = a[0]
             r_tlast.next = a[1]
@@ -60,13 +62,27 @@ class PCIe_host():
             if t_1dw & ~t_tlast:
                 print "Error: 1dw and not tlast"
             if(t_tlast):
-                if self.rxdata[0] & 0xFFFFFFFFFFFF == 0x00084A000002:
+                tlptype = (self.rxdata[0] >> 24) & 0x5F
+                length = self.rxdata[0] & 0x3FF
+                bits = 32
+                if (self.rxdata[0] & 0x20000000) != 0:
+                    bits = 64
+                if bits == 32:
+                    address = combine2dw(self.rxdata[1], 0)
+                else:
+                    address = combine2dw(self.rxdata[1] >> 32, self.rxdata[1])
+                if tlptype == 0b0000000: # read
+                    print "{} bit read request".format(bits),
+                    print "at 0x{:016X}, tag = 0x{:02X}, length = {} dw".format(address, int(self.rxdata[0] >> 40 & 0xFF), length)
+                elif tlptype == 0b1000000: # write
+                    print "{} bit write request at 0x{:016X}, {} dw".format(bits, address, length)
+                    for i in range(length/2):
+                        print "d[{}] = 0x{:016X}".format(i, combine2dw(endianswap(self.rxdata[2+i]), endianswap(self.rxdata[2+i] >> 32)))
+                elif tlptype == 0b1001010:
                     print "read completion,",
                     data = endianswap(self.rxdata[1]>>32)
                     data |= endianswap(self.rxdata[2])
                     print "data = ", data
-                elif self.rxdata[0] & 0xFF000000 == 0:
-                    print "32 bit read request at 0x{:08X}, tag = 0x{:02X}".format(int(self.rxdata[1] & 0xFFFFFFFF), int(self.rxdata[0] >> 40 & 0xFF))
                 else:
                     print "unknown"
                     print "last", hex(self.rxdata[0])
@@ -95,9 +111,29 @@ class Reader():
     def reset(self):
         self.__init__()
 
+class Wfifo():
+    def __init__(self):
+        self.count = 0
+    def docycle(self, reset, ready):
+        self.count += 1
+        if reset:
+            self.count = 0
+            return (0,0)
+        if ready and self.count > 7:
+            return (self.count - 8, 1)
+        else:
+            return (0, 0)
+    def reset(self):
+        self.__init__()
+
 p = PCIe_host()
 p.write(0xDEADBEEF0BADC0DE, 0)
+p.write(0x1FF000000, 32*8)
+p.write(0x100FF000100, 33*8)
+p.write(0x0FF000200, 34*8)
+p.write(384, 10*8)
 p.read(0)
+wf = Wfifo()
 
 def _test_hififo():
     # to core
@@ -108,7 +144,7 @@ def _test_hififo():
     r_tlast = Signal(bool(0))
     r_tdata = Signal(intbv(0, min=0, max=2**64-1))
     tpc0_data = Signal(intbv(0, min=0, max=2**64-1))
-    tpc0_write = Signal(bool(1))
+    tpc0_write = Signal(bool(0))
     fpc0_read = Signal(bool(0))
     # from core
     interrupt = Signal(bool(0))
@@ -129,15 +165,13 @@ def _test_hififo():
     @always(clock.posedge)
     def stim():
         p.docycle(reset, t_tdata, t_1dw, t_tlast, t_tvalid, t_tready, r_tvalid, r_tlast, r_tdata)
+        (tpc0_data.next, tpc0_write.next) = wf.docycle(reset, tpc0_ready)
         if(reset):
             p.reset()
-            tpc0_data.next = 0
-        else:
-            if tpc0_ready:
-                tpc0_data.next = tpc0_data + 1
+  
     @instance
     def check():
-        for i in range(6):
+        for i in range(10):
             yield clock.negedge
         reset.next = 0
         for angle in range(0,200,1):
