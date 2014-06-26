@@ -3,6 +3,7 @@ module pcie_from_pc_fifo
    input 	     clock,
    input 	     reset,
    output reg 	     interrupt = 0,
+   output [63:0]     status, 
    // PIO
    input 	     pio_wvalid,
    input [63:0]      pio_wdata,
@@ -42,7 +43,7 @@ module pcie_from_pc_fifo
    assign rr_valid = ~rr_ready & (prp2 != p_read[2:0]) & (p_request != p_stop);
    assign rr_addr = {pt_q, p_request[13:0], 7'd0};
    assign rr_tag = 0;
-   
+   assign status = {p_write, 9'd0};
    wire 	     p_read_6_clk, p_read_inc128;
    
    always @ (posedge clock)

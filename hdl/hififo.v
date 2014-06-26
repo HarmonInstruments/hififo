@@ -64,14 +64,22 @@ module hififo_pcie
    wire 	tx_wrr_write;
    wire [8:0] 	tx_wrr_addr;
    wire [63:0] 	tx_wrr_data;
-   
+
+   reg [63:0] 	count = 0;
+
+   wire [63:0] 	fpc_status, tpc_status;
+         
    always @ (posedge clock)
      begin
+	count <= count + 1'b1;
 	case({~rx_wr_valid, rx_address})
 	  0: interrupt_out <= rx_data[0];
 	endcase	
 	case({~rx_rr_valid, rx_address})
-	  0: tx_rc_data <= 64'd257;
+	  0: tx_rc_data <= 64'd253;
+	  1: tx_rc_data <= count;
+	  2: tx_rc_data <= fpc_status;
+	  3: tx_rc_data <= tpc_status;
 	endcase
 	tx_rc_done <= rx_rr_valid;
      end
@@ -80,6 +88,7 @@ module hififo_pcie
      (.clock(clock),
       .reset(pci_reset),
       .interrupt(),
+      .status(fpc_status),
       // PIO
       .pio_wvalid(rx_wr_valid),
       .pio_wdata(rx_data),
@@ -105,6 +114,7 @@ module hififo_pcie
      (.clock(clock),
       .reset(pci_reset),
       .interrupt(),
+      .status(tpc_status),
       // PIO
       .pio_wvalid(rx_wr_valid),
       .pio_wdata(rx_data),

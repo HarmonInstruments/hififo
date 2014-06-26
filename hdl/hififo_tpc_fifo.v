@@ -3,6 +3,7 @@ module hififo_tpc_fifo
    input 	    clock,
    input 	    reset,
    output reg 	    interrupt = 0,
+   output [63:0]    status,
    // PIO
    input 	    pio_wvalid,
    input [63:0]     pio_wdata,
@@ -35,6 +36,7 @@ module hififo_tpc_fifo
    wire 	     in_inc128;
    
    assign wr_addr = {pt_q, p_out[13:0], 7'd0};
+   assign status = {p_out, 7'd0};
    
    always @ (posedge clock)
      begin
