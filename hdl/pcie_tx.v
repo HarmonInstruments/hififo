@@ -3,19 +3,24 @@ module pcie_tx
    input 	     clock,
    input 	     reset,
    input [15:0]      pcie_id,
-   input [63:0]      request_addr,
    // read completion (rc)
    input 	     rc_done,
    input [31:0]      rc_dw2,
    input [63:0]      rc_data,
    // read request (rr)
    input 	     rr_valid,
+   input [63:0]      rr_addr,
    input [7:0] 	     rr_tag,
    output 	     rr_ready,
    // write request (wr)
    input 	     wr_valid,
+   input [63:0]      wr_addr,
    output 	     wr_ready,
-   input [63:0]      wr_data,
+   // write request ram (wrr)
+   input 	     wrr_clock,
+   input 	     wrr_write,
+   input [8:0] 	     wrr_addr,
+   input [63:0]      wrr_data,
    // AXI stream to PCI Express core
    input 	     tx_tready,
    output reg [63:0] tx_tdata = 0,
@@ -29,17 +34,22 @@ module pcie_tx
       es = {x[7:0], x[15:8], x[23:16], x[31:24]};
    endfunction
 
+   reg [63:0] 	     wrr[511:0];
+   reg [63:0] 	     wrr_q0, wrr_q1, wrr_q2;
+   
    reg 		     rc_valid;
    wire 	     rc_ready;
    
-   reg [63:0] 	     wr_data_q;
    reg [4:0] 	     state = 0;
-   wire 	     is_32 = request_addr[63:32] == 0;
+   wire [3:0] 	     wrr_count = ((state < 6) || (state > 20)) ? 4'd0 : state - 4'd5;
+   wire 	     rr_is_32 = rr_addr[63:32] == 0;
+   wire 	     wr_is_32 = wr_addr[63:32] == 0;
+   reg 		     wr_is_32_q = 0;
    wire 	     last = (state == 3) || (state == 5) || (state == 23);
    wire [4:0] 	     state_next = (rc_valid & (state != 3)) ? 3'd1 : (rr_valid ? 3'd4 : (wr_valid ? 3'd6 : 3'd0));
    assign rc_ready = (tx_tready | ~tx_tvalid) && (state == 3);
    assign rr_ready = (tx_tready | ~tx_tvalid) && (state == 5);
-   assign wr_ready = (tx_tready | ~tx_tvalid) && (state > 6) && (state < 23);
+   assign wr_ready = (tx_tready | ~tx_tvalid) && (state == 20);
    
    always @(posedge clock)
      begin
@@ -56,11 +66,15 @@ module pcie_tx
 	  state <= state_next;
 	else if((tx_tready | ~tx_tvalid) && (state != 0))
 	  state <= state + 1'b1;
+	if(state == 6)
+	  wr_is_32_q <= wr_is_32;
 	if(tx_tready | ~tx_tvalid)
 	  begin
-	     tx_1dw <= ((state == 3) || ((state == 5) && is_32) || ((state == 23) && (request_addr[63:32] == 0)));
+	     tx_1dw <= ((state == 3) || ((state == 5) && rr_is_32) || ((state == 23) && wr_is_32_q));
 	     tx_tlast <= (state == 3) || (state == 5) || (state == 23);
-	     wr_data_q <= wr_data;
+	     wrr_q0 <= wrr[{wr_addr[11:7],wrr_count}];
+	     wrr_q1 <= wrr_q0;
+	     wrr_q2 <= wrr_q1;
 	     case(state)
 	       // idle
 	       0: tx_tdata <= 64'h0;
@@ -69,13 +83,18 @@ module pcie_tx
 	       2: tx_tdata <= {es(rc_data[31:0]), rc_dw2}; // rc DW3, DW2
 	       3: tx_tdata <= {32'h0, es(rc_data[63:32])}; // rc DW4
 	       // read request (rr)
-	       4: tx_tdata <= {pcie_id, rr_tag[7:0], 8'hFF, 2'd0, ~is_32, 29'd128}; // always 128 DW
-	       5: tx_tdata <= {request_addr[31:0], (is_32 ? request_addr[31:0]: request_addr[63:32])};
+	       4: tx_tdata <= {pcie_id, rr_tag[7:0], 8'hFF, 2'd0, ~rr_is_32, 29'd128}; // always 128 DW
+	       5: tx_tdata <= {rr_addr[31:0], (rr_is_32 ? rr_addr[31:0]: rr_addr[63:32])};
 	       // write request (wr)
-	       6: tx_tdata <= {pcie_id, 16'h00FF, 2'b01, ~is_32, 29'd32};
-	       7: tx_tdata <= is_32 ? {es(wr_data[31:0]), request_addr[31:0]} : {request_addr[31:0], request_addr[63:32]};
-	       default: tx_tdata <= is_32 ? {es(wr_data[31:0]), es(wr_data_q[63:32])} : {es(wr_data_q[63:32]),es(wr_data_q[31:0])};
+	       6: tx_tdata <= {pcie_id, 16'h00FF, 2'b01, ~wr_is_32, 29'd32};
+	       7: tx_tdata <= wr_is_32_q ? {es(wrr_q1[31:0]), wr_addr[31:0]} : {wr_addr[31:0], wr_addr[63:32]};
+	       default: tx_tdata <= wr_is_32_q ? {es(wrr_q1[31:0]), es(wrr_q2[63:32])} : {es(wrr_q2[63:32]),es(wrr_q2[31:0])};
 	     endcase
 	  end
-     end   
+     end // always @ (posedge clock)
+always @ (posedge wrr_clock)
+  begin
+     if(wrr_write)
+       wrr[wrr_addr] <= wrr_data;
+  end
 endmodule
