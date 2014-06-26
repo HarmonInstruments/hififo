@@ -65,7 +65,7 @@ module pcie_rx
 		    rr_rc_lower_addr <= tdata_q[6:3];
 	       end
 	     if(wait_dw01)
-	       completion_index <= 6'd0 - {tdata_q[40:38],3'd0};
+	       completion_index <= 6'h3F - {tdata_q[40:38],3'd0};
 	     else if(wait_dw45)
 	       completion_index <= completion_index + 1'b1;
 	  end
