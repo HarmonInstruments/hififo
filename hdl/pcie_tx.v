@@ -59,13 +59,19 @@ module pcie_tx
 	  rc_valid <= 1'b1;
 	else if(rc_ready)
 	  rc_valid <= 1'b0;
-	tx_tvalid <= reset ? 1'b0 : (state != 0);
 	if(reset)
-	  state <= 5'd0;
-	else if((tx_tready | ~tx_tvalid) && (last || (state == 0)))
-	  state <= state_next;
-	else if((tx_tready | ~tx_tvalid) && (state != 0))
-	  state <= state + 1'b1;
+	  begin
+	     tx_tvalid <= 1'b0;
+	     state <= 5'd0;
+	  end
+	else if(tx_tready | ~tx_tvalid)
+	  begin
+	     tx_tvalid <= state != 0;
+	     if(last || (state == 0))
+	       state <= state_next;
+	     else if(state != 0)
+	       state <= state + 1'b1;
+	  end
 	if(state == 6)
 	  wr_is_32_q <= wr_is_32;
 	if(tx_tready | ~tx_tvalid)
