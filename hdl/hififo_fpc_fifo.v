@@ -57,14 +57,14 @@ module pcie_from_pc_fifo
 	  block_filled <= 8'd0;
 	else
 	  begin
-	     block_filled[0] <= (write_last && (rc_tag == 0)) || ((p_write == 0) ? 1'b0 : block_filled[0]);
-	     block_filled[1] <= (write_last && (rc_tag == 1)) || ((p_write == 1) ? 1'b0 : block_filled[1]);
-	     block_filled[2] <= (write_last && (rc_tag == 2)) || ((p_write == 2) ? 1'b0 : block_filled[2]);
-	     block_filled[3] <= (write_last && (rc_tag == 3)) || ((p_write == 3) ? 1'b0 : block_filled[3]);
-	     block_filled[4] <= (write_last && (rc_tag == 4)) || ((p_write == 4) ? 1'b0 : block_filled[4]);
-	     block_filled[5] <= (write_last && (rc_tag == 5)) || ((p_write == 5) ? 1'b0 : block_filled[5]);
-	     block_filled[6] <= (write_last && (rc_tag == 6)) || ((p_write == 6) ? 1'b0 : block_filled[6]);
-	     block_filled[7] <= (write_last && (rc_tag == 7)) || ((p_write == 7) ? 1'b0 : block_filled[7]);
+	     block_filled[0] <= (write_last && (rc_tag == 0)) || ((p_write[2:0] == 0) ? 1'b0 : block_filled[0]);
+	     block_filled[1] <= (write_last && (rc_tag == 1)) || ((p_write[2:0] == 1) ? 1'b0 : block_filled[1]);
+	     block_filled[2] <= (write_last && (rc_tag == 2)) || ((p_write[2:0] == 2) ? 1'b0 : block_filled[2]);
+	     block_filled[3] <= (write_last && (rc_tag == 3)) || ((p_write[2:0] == 3) ? 1'b0 : block_filled[3]);
+	     block_filled[4] <= (write_last && (rc_tag == 4)) || ((p_write[2:0] == 4) ? 1'b0 : block_filled[4]);
+	     block_filled[5] <= (write_last && (rc_tag == 5)) || ((p_write[2:0] == 5) ? 1'b0 : block_filled[5]);
+	     block_filled[6] <= (write_last && (rc_tag == 6)) || ((p_write[2:0] == 6) ? 1'b0 : block_filled[6]);
+	     block_filled[7] <= (write_last && (rc_tag == 7)) || ((p_write[2:0] == 7) ? 1'b0 : block_filled[7]);
 	  end
 	p_stop <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 6) ? pio_wdata[25:9] : p_stop);
 	p_int <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 7) ? pio_wdata[25:9] : p_int);
