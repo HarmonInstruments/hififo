@@ -142,8 +142,13 @@ int main ( int argc, char **argv )
   uint64_t count; 
   
   printf("count = %ld\n", fifodev->read_available);
-  fprintf(stderr, "d[0] = %.16lx\n", d[0]);
-  fifo_read_free(fifodev, 8192);
+  if(d != NULL){
+    fprintf(stderr, "d[0] = %.16lx\n", d[0]);
+    fifo_read_free(fifodev, 8192);
+  }
+  else
+    fprintf(stderr, "d = NULL");
+
   fprintf(stderr, "f->read_pointer = %ld\n", fifodev->read_pointer);
   
   for(int i=0;i<1024UL*1000*1000*10;i+=count){
