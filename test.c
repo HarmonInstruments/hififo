@@ -43,7 +43,7 @@ struct fifodev * fifo_open(char * filename)
     perror("hififo.c: read pointer ioctl() failed");
     goto fail3;
   }
-  f->read_mask = (4*1024*1024)-1;
+  f->read_mask = (2*1024*1024)-1;
   fprintf(stderr, "f->read_pointer = %ld\n", f->read_pointer);
   return f;
  fail3:

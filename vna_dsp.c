@@ -27,21 +27,21 @@ static struct pci_device_id vna_dsp_pci_table[] = {
 #define BUFFER_PAGES_FROM_PC 1
 #define BUFFER_PAGES_TO_PC 1
 #define BUFFER_MAX_PAGES 32
-#define BUFFER_PAGE_SIZE (4096*1024) // this is the size of a page in the card's page table
+#define BUFFER_PAGE_SIZE (2048*1024) // this is the size of a page in the card's page table
 #define BUFFER_SIZE_TO_PC (BUFFER_PAGE_SIZE*BUFFER_PAGES_TO_PC)
 #define BUFFER_SIZE_FROM_PC (BUFFER_PAGE_SIZE*BUFFER_PAGES_FROM_PC)
 
 #define REG_INTERRUPT 0
-
-#define REG_TO_PC_COUNT 3
-#define REG_TO_PC_STOP 8
-#define REG_TO_PC_MATCH 9
-#define REG_TO_PC_ENABLE 10
-#define REG_FROM_PC_ENABLE 11
-#define REG_FROM_PC_DISABLE 12
-#define REG_FROM_PC_MATCH 13
+#define REG_TO_PC_COUNT 2
+#define REG_TO_PC_STOP 3
+#define REG_TO_PC_MATCH 4
+#define REG_FROM_PC_COUNT 5
+#define REG_FROM_PC_STOP 6
+#define REG_FROM_PC_MATCH 7
+#define REG_RESET 8
+#define REG_TO_PC_PAGE_TABLE_BASE 32
 #define REG_FROM_PC_PAGE_TABLE_BASE 64
-#define REG_TO_PC_PAGE_TABLE_BASE 512
+
 
 static struct class *vna_class;
 
@@ -161,7 +161,7 @@ static ssize_t vna_dsp_write(struct file *filp,
   if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
     return -EINVAL;
   retval = copy_from_user(drvdata->from_pc_buffer[0], buf, length);
-  fifo_writereg(length >> 3, REG_FROM_PC_ENABLE);
+  //fifo_writereg(length >> 3, REG_FROM_PC_ENABLE);
   return length;//-EINVAL;
 }
 
@@ -376,8 +376,7 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     printk("bar0[%d] = %llx\n", i, (u64) fifo_readreg(i));
 
   /* disable it */
-  fifo_writereg(0, REG_FROM_PC_DISABLE);
-  fifo_writereg(0, REG_TO_PC_ENABLE);
+  fifo_writereg(0xF, REG_RESET);
   udelay(10); /* wait for completion of anything that was running */
   /* set interrupt match registers */
   fifo_writereg(0, REG_TO_PC_MATCH);
@@ -392,16 +391,15 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   for(i=0; i<8; i++)
     printk("bar0[%d] = %llx\n", i, (u64) fifo_readreg(i));
   /* enable it */
-  fifo_writereg(BUFFER_SIZE_TO_PC-128, REG_TO_PC_STOP);
-  fifo_writereg(1, REG_TO_PC_ENABLE);
-  fifo_writereg(4*1024*1024, REG_FROM_PC_ENABLE); // enable
+  fifo_writereg(0, REG_RESET);
+  fifo_writereg(BUFFER_SIZE_TO_PC-1024, REG_TO_PC_STOP);
   drvdata->to_pc_pointer = 0;
   return 0;
 }
 
 static void vna_dsp_remove(struct pci_dev *pdev){
   struct hififo_dev *drvdata = pci_get_drvdata(pdev);
-  fifo_writereg(0, REG_TO_PC_ENABLE);
+  fifo_writereg(0xF, REG_RESET);
   device_destroy(vna_class, MKDEV(drvdata->major, 0));
 }
 
