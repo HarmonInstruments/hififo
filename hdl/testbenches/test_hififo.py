@@ -24,9 +24,23 @@ def combine2dw(l,h):
 
 class PCIe_host():
     def __init__(self):
+        self.read_outstanding = 0
         self.rxdata = []
         self.requested = 0
         self.txqueue = Queue.Queue()
+        self.complete_val = 0
+        # enable interrupts
+        self.write(0xF, 0*8)
+        # load page tables
+        self.write(0x100000000, 32*8)
+        self.write(0x2000400000, 33*8)
+        self.write(0x000000000, 64*8)
+        self.write(0x100000000, 65*8)
+        # enable FIFOs
+        self.write(0, 8*8)
+        self.write(0x00000100, 3*8)
+        self.write(0x00300000, 6*8)
+        self.read(5*8, 1)
     def write(self, data, address):
         self.txqueue.put([0xbeef00ff40000002, 0])
         self.txqueue.put([address | (endianswap(data) << 32), 0])
@@ -36,8 +50,18 @@ class PCIe_host():
         self.txqueue.put([0xbeef00ff00000002 | tag << 40, 0])
         self.txqueue.put([address, 1])
         print "self.txqueue.qsize() = {}".format(self.txqueue.qsize())
-    def complete(self, address):
-        print "a"
+        self.read_outstanding = 1
+    def complete(self, address, reqid_tag):
+        complete_size = random.choice([8,16]) # QW
+        for i in range(64/complete_size):
+            self.txqueue.put([0xbeef00004A000000 | complete_size | ((512-complete_size*8*i) << 32), 0]) # 8 DW
+            self.txqueue.put([combine2dw((reqid_tag << 8) | ((i & 1) << 6), endianswap(self.complete_val)), 0])
+            for j in range(complete_size):
+                self.complete_val += 1
+                self.txqueue.put([combine2dw(0, endianswap(self.complete_val)), j==(complete_size - 1)])
+                
+        print "self.txqueue.qsize() = {}".format(self.txqueue.qsize())
+
     def do_read(self, address):
         self.txqueue.put(["read", address])
     def request(self):
@@ -56,7 +80,6 @@ class PCIe_host():
         except:
             r_tvalid.next = 0
         # handle rx        
-        t_tready.next = 1 # random.choice([0,1])
         if(t_tvalid & t_tready):
             self.rxdata.append(int(t_tdata))
             if t_1dw & ~t_tlast:
@@ -74,22 +97,25 @@ class PCIe_host():
                 if tlptype == 0b0000000: # read
                     print "{} bit read request".format(bits),
                     print "at 0x{:016X}, tag = 0x{:02X}, length = {} dw".format(address, int(self.rxdata[0] >> 40 & 0xFF), length)
+                    reqid_tag = 0xFFFFFF & (self.rxdata[0] >> 40) 
+                    self.complete(address, reqid_tag)
                 elif tlptype == 0b1000000: # write
                     print "{} bit write request at 0x{:016X}, {} dw".format(bits, address, length)
                     for i in range(length/2):
-                        print "d[{}] = 0x{:016X}".format(i, combine2dw(endianswap(self.rxdata[2+i]), endianswap(self.rxdata[2+i] >> 32)))
+                        d = combine2dw(endianswap(self.rxdata[2+i]), endianswap(self.rxdata[2+i] >> 32))
+                        if d != (((address/8) & 0xFFFF) + i): 
+                            print "d[{}] = 0x{:016X}".format(i, d)
                 elif tlptype == 0b1001010:
                     print "read completion,",
                     data = endianswap(self.rxdata[1]>>32)
                     data |= endianswap(self.rxdata[2])
                     print "data = ", data
+                    self.read_outstanding = 0
                 else:
                     print "unknown"
                     print "last", hex(self.rxdata[0])
-#2: tx_tdata <= {es(rc_data[31:0]), rc_rid_tag, 1'b0, rc_lower_addr, 3'd0}; // rc DW3, DW2
-                    #3: tx_tdata <= {32'h0, es(rc_data[63:32])}; // rc DW4
-
                 self.rxdata = []
+        t_tready.next = random.choice([0,1])
         return
     def reset(self):
         pass
@@ -126,14 +152,26 @@ class Wfifo():
     def reset(self):
         self.__init__()
 
+class Rfifo():
+    def __init__(self):
+        self.expected = 0
+        self.count = 0
+        self.error = 0
+    def docycle(self, data, valid):
+        data = int(data)
+        if valid:
+            if data != self.expected:
+                print "fpc0_data = {}, last+1 = {}".format(data, self.expected)
+                self.error = 1
+            self.expected = int(data) + 1
+            self.count += 1
+        return random.choice([0,1])
+    
 p = PCIe_host()
-p.write(0xDEADBEEF0BADC0DE, 0)
-p.write(0x1FF000000, 32*8)
-p.write(0x100FF000100, 33*8)
-p.write(0x0FF000200, 34*8)
-p.write(384, 10*8)
-p.read(0)
+
 wf = Wfifo()
+rf = Rfifo()
+lastrx = 0
 
 def _test_hififo():
     # to core
@@ -166,6 +204,10 @@ def _test_hififo():
     def stim():
         p.docycle(reset, t_tdata, t_1dw, t_tlast, t_tvalid, t_tready, r_tvalid, r_tlast, r_tdata)
         (tpc0_data.next, tpc0_write.next) = wf.docycle(reset, tpc0_ready)
+        if interrupt:
+            print "interrupt"
+        fpc0_read.next = rf.docycle(fpc0_data, fpc0_empty)
+
         if(reset):
             p.reset()
   
@@ -174,7 +216,7 @@ def _test_hififo():
         for i in range(10):
             yield clock.negedge
         reset.next = 0
-        for angle in range(0,200,1):
+        for angle in range(0,1000000,1):
             yield clock.posedge
         raise StopSimulation
     
@@ -190,5 +232,5 @@ def trace_hififo(n=None):
  
 if __name__=="__main__":
     test_hififo()
-
+    print "fpc count, fpc error, tpc count", rf.count, rf.error, wf.count
 
