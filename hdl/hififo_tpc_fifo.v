@@ -2,7 +2,7 @@ module hififo_tpc_fifo
   (
    input 	    clock,
    input 	    reset,
-   output reg 	    interrupt = 0,
+   output reg [1:0] interrupt = 0,
    output [63:0]    status,
    // PIO
    input 	    pio_wvalid,
@@ -56,12 +56,11 @@ module hififo_tpc_fifo
 	  p_in <= 1'b0;
 	else if(1)
 	  p_in <= p_in + in_inc128;
-	if(reset)
-	  p_stop <= 1'b0;
-	else if(pio_wvalid && (pio_addr == 10))
-	  p_stop <= pio_wdata[26:7];
+	p_stop <= reset ? 1'b0 : ((pio_wvalid && (pio_addr == 10)) ? pio_wdata[26:7] : p_stop);
+	p_int  <= reset ? 1'b0 : ((pio_wvalid && (pio_addr == 11)) ? pio_wdata[26:7] : p_int );
 	if(pio_wvalid && (pio_addr[12:5] == 1))
 	  pt[pio_addr[4:0]] <= pio_wdata[63:21];
+	interrupt <= {(p_stop == p_out), (p_int == p_out)};
      end
 
    wire 	     p_in_4_clk;

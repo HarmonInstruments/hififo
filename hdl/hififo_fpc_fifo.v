@@ -2,7 +2,7 @@ module pcie_from_pc_fifo
   (
    input 	     clock,
    input 	     reset,
-   output reg 	     interrupt = 0,
+   output reg [1:0]  interrupt = 0,
    output [63:0]     status, 
    // PIO
    input 	     pio_wvalid,
@@ -71,6 +71,7 @@ module pcie_from_pc_fifo
 	p_read <= reset ? 1'b0 : p_read + p_read_inc128;
 	p_write <= reset ? 1'b0 : p_write + block_filled[p_write[2:0]];
 	p_request <= reset ? 1'b0 : p_request + rr_ready;
+	interrupt <= {(p_stop == p_write), (p_int == p_write)};
      end
    
    oneshot_dualedge oneshot0(.clock(clock), .in(p_read_6_clk), .out(p_read_inc128));
