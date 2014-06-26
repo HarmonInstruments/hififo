@@ -85,10 +85,10 @@ module hififo_pcie
       .pio_wdata(rx_data),
       .pio_addr(rx_address),
       // read completion
-      .completion_valid(rx_rc_valid),
-      .completion_tag(rx_rc_tag),
-      .completion_index(rx_rc_index),
-      .completion_data(rx_data),
+      .rc_valid(rx_rc_valid),
+      .rc_tag(rx_rc_tag),
+      .rc_index(rx_rc_index),
+      .rc_data(rx_data),
       // read request
       .rr_valid(tx_rr_valid),
       .rr_ready(tx_rr_ready),

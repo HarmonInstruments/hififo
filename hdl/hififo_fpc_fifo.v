@@ -8,10 +8,10 @@ module pcie_from_pc_fifo
    input [63:0]      pio_wdata,
    input [12:0]      pio_addr, 
    // read completion
-   input 	     completion_valid,
-   input [7:0] 	     completion_tag,
-   input [5:0] 	     completion_index,
-   input [63:0]      completion_data,
+   input 	     rc_valid,
+   input [7:0] 	     rc_tag,
+   input [5:0] 	     rc_index,
+   input [63:0]      rc_data,
    // read request
    output 	     rr_valid,
    output [63:0]     rr_addr,
@@ -35,9 +35,9 @@ module pcie_from_pc_fifo
    reg [16:0] 	     p_request = 0;
    reg [16:0] 	     p_stop = 0;
    reg [16:0] 	     p_int = 0;
-   wire  	     write = (completion_tag[7:3] == channel) && completion_valid;
-   wire [8:0] 	     write_address = {completion_tag[2:0],completion_index};
-   wire 	     write_last = write && (completion_index == 6'h3F);
+   wire  	     write = (rc_tag[7:3] == 0) && rc_valid;
+   wire [8:0] 	     write_address = {rc_tag[2:0],rc_index};
+   wire 	     write_last = write && (rc_index == 6'h3F);
    wire [2:0] 	     prp2 = p_request[2:0] + 2'd2;
    assign rr_valid = ~rr_ready & (prp2 != p_read[2:0]) & (p_request != p_stop);
    assign rr_addr = {pt_q, p_request[13:0], 7'd0};
@@ -51,19 +51,19 @@ module pcie_from_pc_fifo
 	if(pio_wvalid && (pio_addr[12:5] == 2))
 	  pt[pio_addr[4:0]] <= pio_wdata[63:21];
 	if(write)
-	  fifo_bram[write_address] <= completion_data;
+	  fifo_bram[write_address] <= rc_data;
 	if(reset)
 	  block_filled <= 8'd0;
 	else
 	  begin
-	     block_filled[0] <= (write_last && (completion_tag == 0)) || ((p_write == 0) ? 1'b0 : block_filled[0]);
-	     block_filled[1] <= (write_last && (completion_tag == 1)) || ((p_write == 1) ? 1'b0 : block_filled[1]);
-	     block_filled[2] <= (write_last && (completion_tag == 2)) || ((p_write == 2) ? 1'b0 : block_filled[2]);
-	     block_filled[3] <= (write_last && (completion_tag == 3)) || ((p_write == 3) ? 1'b0 : block_filled[3]);
-	     block_filled[4] <= (write_last && (completion_tag == 4)) || ((p_write == 4) ? 1'b0 : block_filled[4]);
-	     block_filled[5] <= (write_last && (completion_tag == 5)) || ((p_write == 5) ? 1'b0 : block_filled[5]);
-	     block_filled[6] <= (write_last && (completion_tag == 6)) || ((p_write == 6) ? 1'b0 : block_filled[6]);
-	     block_filled[7] <= (write_last && (completion_tag == 7)) || ((p_write == 7) ? 1'b0 : block_filled[7]);
+	     block_filled[0] <= (write_last && (rc_tag == 0)) || ((p_write == 0) ? 1'b0 : block_filled[0]);
+	     block_filled[1] <= (write_last && (rc_tag == 1)) || ((p_write == 1) ? 1'b0 : block_filled[1]);
+	     block_filled[2] <= (write_last && (rc_tag == 2)) || ((p_write == 2) ? 1'b0 : block_filled[2]);
+	     block_filled[3] <= (write_last && (rc_tag == 3)) || ((p_write == 3) ? 1'b0 : block_filled[3]);
+	     block_filled[4] <= (write_last && (rc_tag == 4)) || ((p_write == 4) ? 1'b0 : block_filled[4]);
+	     block_filled[5] <= (write_last && (rc_tag == 5)) || ((p_write == 5) ? 1'b0 : block_filled[5]);
+	     block_filled[6] <= (write_last && (rc_tag == 6)) || ((p_write == 6) ? 1'b0 : block_filled[6]);
+	     block_filled[7] <= (write_last && (rc_tag == 7)) || ((p_write == 7) ? 1'b0 : block_filled[7]);
 	  end
 	p_stop <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 16) ? pio_wdata[25:9] : p_stop);
 	p_int <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 17) ? pio_wdata[25:9] : p_int);
