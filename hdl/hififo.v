@@ -91,7 +91,6 @@ module hififo_pcie
 	  1: tx_rc_data <= count;
 	  2: tx_rc_data <= tpc_status;
 	  5: tx_rc_data <= fpc_status;
-	  default: tx_rc_data <= 1'b0;
 	endcase
 	tx_rc_done <= rx_rr_valid;
      end
