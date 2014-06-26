@@ -28,7 +28,7 @@ module hififo_tpc_fifo
    // clock
    reg [42:0] 	     pt [31:0];
    reg [42:0] 	     pt_q;
-   reg [18:0] 	     p_in; // 128 bytes
+   reg [4:0] 	     p_in; // 128 bytes
    reg [18:0] 	     p_out; // 128 bytes
    reg [18:0] 	     p_stop; // 128 bytes
    reg [18:0] 	     p_int; // 128 bytes

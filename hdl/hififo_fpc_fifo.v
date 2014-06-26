@@ -31,7 +31,7 @@ module pcie_from_pc_fifo
    reg [63:0] 	     fifo_bram [511:0];
    reg [63:0] 	     fifo_bram_oreg;
    reg [7:0] 	     block_filled = 0;
-   reg [16:0] 	     p_read = 0;
+   reg [2:0] 	     p_read = 0;
    reg [16:0] 	     p_write = 0;
    reg [16:0] 	     p_request = 0;
    reg [16:0] 	     p_stop = 0;
@@ -42,7 +42,7 @@ module pcie_from_pc_fifo
    wire [2:0] 	     prp2 = p_request[2:0] + 2'd2;
    assign rr_valid = ~rr_ready & (prp2 != p_read[2:0]) & (p_request != p_stop);
    assign rr_addr = {pt_q, p_request[13:0], 7'd0};
-   assign rr_tag = 0;
+   assign rr_tag = p_request[2:0];
    assign status = {p_write, 9'd0};
    wire 	     p_read_6_clk, p_read_inc128;
    
