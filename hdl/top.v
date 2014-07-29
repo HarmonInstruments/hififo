@@ -33,15 +33,15 @@ module vna_dsp
    wire 	    pio_write_valid;
    wire [63:0] 	    pio_write_data;
    wire [12:0] 	    pio_address;
-      
+   
    reg [63:0] 	    tpc_data = 0;
    reg 		    tpc_write = 0;
    wire 	    tpc_ready;
-
+   
    wire [63:0] 	    fpc_data;
-   wire 	    fpc_read = 1'b1;
-   wire 	    fpc_empty;
-
+   reg 		    fpc_read = 1'b0;
+   wire 	    fpc_valid;
+   
    wire 	    pci_reset;
    wire [15:0] 	    pci_id;
    // to core
@@ -56,7 +56,7 @@ module vna_dsp
    wire 	    m_axis_rx_tvalid;
    wire 	    m_axis_rx_tlast;
    wire [63:0] 	    m_axis_rx_tdata;
-		    
+   
    hififo_pcie hififo
      (.clock(clock),
       .pci_reset(pci_reset),
@@ -81,30 +81,33 @@ module vna_dsp
       .fpc0_reset(),
       .fpc0_data(fpc_data),
       .fpc0_read(fpc_read),
-      .fpc0_empty(fpc_empty)
+      .fpc0_valid(fpc_valid)
       );
    
    reg 		    use_count = 1;
       
    always @ (posedge clock)
      begin
-	if(pio_write_valid)
-	  led[3:0] <= pio_write_data[3:0];
+	if(fpc_valid)
+	  led[3:0] <= fpc_data[3:0];
 	if(pio_write_valid && (pio_address == 15))
 	  use_count <= pio_write_data[0];
 	
-	if(~fpc_empty & ~use_count)
+	if(~use_count)
 	  begin
-	     tpc_write <= 1'b1;
+	     fpc_read <= 1'b1;
+	     tpc_write <= fpc_valid;
 	     tpc_data <= fpc_data;
 	  end
 	else if(tpc_ready)
 	  begin
+	     fpc_read <= 1'b0;
 	     tpc_write <= 1'b1;
 	     tpc_data <= tpc_data + 1'b1;
 	  end
 	else
 	  begin
+	     fpc_read <= 1'b0;
 	     tpc_write <= 1'b0;
 	  end
      end

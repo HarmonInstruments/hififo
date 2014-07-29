@@ -25,7 +25,7 @@ module hififo_pcie
    output 	 fpc0_reset,
    output [63:0] fpc0_data,
    input 	 fpc0_read,
-   output 	 fpc0_empty,
+   output 	 fpc0_valid,
    // PIO
    output 	 pio_write_valid,
    output [63:0] pio_write_data,
@@ -118,7 +118,7 @@ module hififo_pcie
       .fifo_clock(fifo_clock),
       .fifo_read(fpc0_read),
       .fifo_read_data(fpc0_data),
-      .fifo_read_valid(fpc0_empty)
+      .fifo_read_valid(fpc0_valid)
       );
       
    hififo_tpc_fifo tpc0_fifo
