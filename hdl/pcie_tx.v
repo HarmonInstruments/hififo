@@ -77,7 +77,7 @@ module pcie_tx
 	if(tx_tready | ~tx_tvalid)
 	  begin
 	     tx_1dw <= ((state == 3) || ((state == 5) && rr_is_32) || ((state == 23) && wr_is_32_q));
-	     tx_tlast <= (state == 3) || (state == 5) || (state == 23);
+	     tx_tlast <= last;
 	     wrr_q0 <= wrr[{wr_addr[11:7],wrr_count}];
 	     wrr_q1 <= wrr_q0;
 	     wrr_q2 <= wrr_q1;
