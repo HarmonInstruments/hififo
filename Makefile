@@ -19,7 +19,7 @@ dmesg:
 	ssh vna dmesg
 
 test: test.c
-	gcc test.c -o test -std=c99 -Wall -O2
+	gcc test.c -o test -std=c99 -Wall -fopenmp -march=native -mavx -O3
 runtest: test
 	scp test root@vna:
 	ssh root@vna time ./test
