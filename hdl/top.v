@@ -95,7 +95,7 @@ module vna_dsp
 	
 	if(~use_count)
 	  begin
-	     fpc_read <= 1'b1;
+	     fpc_read <= tpc_ready;
 	     tpc_write <= fpc_valid;
 	     tpc_data <= fpc_data;
 	  end
