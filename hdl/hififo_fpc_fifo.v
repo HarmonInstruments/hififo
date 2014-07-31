@@ -1,35 +1,33 @@
 module pcie_from_pc_fifo
   (
-   input 	     clock,
-   input 	     reset,
-   output reg [1:0]  interrupt = 0,
-   output [63:0]     status, 
+   input 	    clock,
+   input 	    reset,
+   output reg [1:0] interrupt = 0,
+   output [63:0]    status, 
    // PIO
-   input 	     pio_wvalid,
-   input [63:0]      pio_wdata,
-   input [12:0]      pio_addr, 
+   input 	    pio_wvalid,
+   input [63:0]     pio_wdata,
+   input [12:0]     pio_addr, 
    // read completion
-   input 	     rc_valid,
-   input [7:0] 	     rc_tag,
-   input [5:0] 	     rc_index,
-   input [63:0]      rc_data,
+   input 	    rc_valid,
+   input [7:0] 	    rc_tag,
+   input [5:0] 	    rc_index,
+   input [63:0]     rc_data,
    // read request
-   output 	     rr_valid,
-   output [63:0]     rr_addr,
-   output [7:0]      rr_tag,
-   input 	     rr_ready,
+   output 	    rr_valid,
+   output [63:0]    rr_addr,
+   output [7:0]     rr_tag,
+   input 	    rr_ready,
    // FIFO
-   input 	     fifo_clock, // for all FIFO signals
-   input 	     fifo_read,
-   output reg [63:0] fifo_read_data,
-   output reg 	     fifo_read_valid = 0
+   input 	    fifo_clock, // for all FIFO signals
+   input 	    fifo_read,
+   output [63:0]    fifo_read_data,
+   output 	    fifo_read_valid
    );
 
    // clock
    reg [42:0] 	     pt [31:0];
    reg [42:0] 	     pt_q;
-   reg [63:0] 	     fifo_bram [511:0];
-   reg [63:0] 	     fifo_bram_oreg;
    reg [7:0] 	     block_filled = 0;
    reg [2:0] 	     p_read = 0;
    reg [16:0] 	     p_write = 0;
@@ -51,8 +49,6 @@ module pcie_from_pc_fifo
 	pt_q <= pt[p_request[16:12]];
 	if(pio_wvalid && (pio_addr[12:5] == 2))
 	  pt[pio_addr[4:0]] <= pio_wdata[63:21];
-	if(write)
-	  fifo_bram[write_address] <= rc_data;
 	if(reset)
 	  block_filled <= 8'd0;
 	else
@@ -77,30 +73,80 @@ module pcie_from_pc_fifo
    oneshot_dualedge oneshot0(.clock(clock), .in(p_read_6_clk), .out(p_read_inc128));
 
    // fifo_clock
-   reg [8:0] 	  p_read_fclk = 0;
+   wire [8:0] 	  p_read_fclk;
    wire [2:0] 	  p_write_fclk;
    wire 	  reset_fclk;
    gray_sync_3 sync0(.clock_in(clock), .in(p_write[2:0]), .clock_out(fifo_clock), .out(p_write_fclk));
    sync sync1(.clock(clock), .in(p_read_fclk[6]), .out(p_read_6_clk));
    sync sync_reset(.clock(fifo_clock), .in(reset), .out(reset_fclk));
    
-   reg 		  read_valid_q = 0;
-   wire 	  read_valid = fifo_read && (p_read_fclk != {p_write_fclk,6'd0});
+   fwft_out fwft_out
+     (.clock_in(clock),
+      .d_in(rc_data),
+      .a_in(write_address),
+      .w_in(write),
+      .clock(fifo_clock),
+      .reset(reset_fclk),
+      .p_in({p_write_fclk,6'd0}),
+      .p_out(p_read_fclk),
+      .d_out(fifo_read_data),
+      .v_out(fifo_read_valid),
+      .r_out(fifo_read));
+
+endmodule
+
+module fwft_out
+  (
+   // clock_in domain - write data only
+   input 	    clock_in,
+   input [63:0]     d_in,
+   input [8:0] 	    a_in,
+   input 	    w_in,
+   // clock domain
+   input 	    clock,
+   input 	    reset, 
+   input [8:0] 	    p_in, // pointer in
+   output reg [8:0] p_out, // pointer out
+   output [63:0]    d_out,
+   output 	    v_out,
+   input 	    r_out);
    
-   always @ (posedge fifo_clock)
+   reg [63:0] 	     fifo_bram [511:0];
+   
+   always @ (posedge clock_in)
      begin
-	fifo_bram_oreg <= fifo_bram[p_read_fclk];
-	fifo_read_data <= fifo_bram_oreg;
-	if(reset_fclk)
+	if(w_in)
+	  fifo_bram[a_in] <= d_in;
+     end
+
+   reg [63:0] 	  a_data, b_data;
+   reg 		  a_valid = 0, b_valid = 0;
+   
+   wire 	  a_cken = (p_out != p_in) && (~a_valid | ~b_valid | r_out);
+   wire 	  b_cken = a_valid && (~b_valid | r_out);
+
+   assign v_out = b_valid;
+   assign d_out = b_data;
+      
+   always @ (posedge clock)
+     begin
+	if(reset)
 	  begin
-	     fifo_read_valid <= 1'b0;
-	     p_read_fclk <= 1'b0;
+	     p_out <= 1'b0;
+	     a_valid <= 1'b0;
+	     b_valid <= 1'b0;
 	  end
 	else
 	  begin
-	     p_read_fclk <= p_read_fclk + read_valid;
-	     read_valid_q <= read_valid;
-	     fifo_read_valid <= read_valid_q;
+	     // a stage
+	     p_out <= p_out + a_cken;
+	     if(a_cken)
+	       a_data <= fifo_bram[p_out];
+	     a_valid <= a_cken | (a_valid && ~b_cken);
+	     // b stage
+	     if(b_cken)
+	       b_data <= a_data;
+	     b_valid <= b_cken | (b_valid && ~r_out);
 	  end
      end
 endmodule
