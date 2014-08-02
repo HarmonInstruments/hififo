@@ -13,19 +13,19 @@ module tb_hififo_pcie;
    reg 	       r_tlast;
    reg [63:0]  r_tdata;
 
-   reg [63:0]  tpc0_data;
-   reg 	       tpc0_write;
+   wire [63:0] tpc0_data;
+   wire	       tpc0_write;
    wire        tpc0_ready;
 
    wire [63:0] fpc0_data;
-   reg 	       fpc0_read;
-   wire        fpc0_empty;
+   wire	       fpc0_read;
+   wire        fpc0_valid;
      
    initial begin
       $dumpfile("dump.vcd");
-      $dumpvars(0, dut);
-      $from_myhdl(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, tpc0_data, tpc0_write, fpc0_read);
-      $to_myhdl(interrupt, t_tdata, t_1dw, t_tlast, t_tvalid, tpc0_ready, fpc0_data, fpc0_empty);
+      $dumpvars(0, dut, sequencer);
+      $from_myhdl(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata);
+      $to_myhdl(interrupt, t_tdata, t_1dw, t_tlast, t_tvalid);
    end
    
    hififo_pcie dut
@@ -51,11 +51,21 @@ module tb_hififo_pcie;
       .fpc0_reset(),
       .fpc0_data(fpc0_data),
       .fpc0_read(fpc0_read),
-      .fpc0_empty(fpc0_empty),
+      .fpc0_valid(fpc0_valid),
       // PIO
       .pio_write_valid(),
       .pio_write_data(),
       .pio_address()
       );
-   
+
+   sequencer sequencer
+     (.clock(clock),
+      .reset(reset),
+      .fpc_read(fpc0_read),
+      .fpc_valid(fpc0_valid),
+      .fpc_data(fpc0_data),
+      .tpc_ready(tpc0_ready),
+      .tpc_write(tpc0_write),
+      .tpc_data(tpc0_data));
+      
 endmodule
