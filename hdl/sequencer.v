@@ -29,7 +29,7 @@ module sequencer
       .d_addr(),
       .d_valid(tpc_write),
       .d_ready({15'd0, tpc_ready}));
-endmodule // sequencer
+endmodule
 
 module sequencer_fpc
   (

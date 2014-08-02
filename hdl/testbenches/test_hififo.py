@@ -99,7 +99,7 @@ class PCIe_host():
                 else:
                     print "unknown TLP ", hex(self.rxdata[0])
                 self.rxdata = []
-        t_tready.next = random.choice([0,0,0,1])
+        t_tready.next = random.choice([1,1,1,1])
         return
 
 def seq_wait(x):

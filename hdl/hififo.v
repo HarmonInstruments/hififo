@@ -64,11 +64,8 @@ module hififo_pcie
    wire 	tx_wr_valid;
    wire 	tx_wr_ready;
    wire [63:0] 	tx_wr_addr;
-   
-   wire 	tx_wrr_write;
-   wire [8:0] 	tx_wrr_addr;
-   wire [63:0] 	tx_wrr_data;
-
+   wire [63:0] 	tx_wr_data;
+  
    reg [63:0] 	count = 0;
    reg [1:0] 	reset_fifo_0 = 3;
    reg [1:0] 	reset_fifo = 3;
@@ -130,14 +127,11 @@ module hififo_pcie
       .pio_wvalid(rx_wr_valid),
       .pio_wdata(rx_data),
       .pio_addr(rx_address),
-      // write request ram
-      .wrr_write(tx_wrr_write),
-      .wrr_addr(tx_wrr_addr),
-      .wrr_data(tx_wrr_data),
       // write request to TX
       .wr_valid(tx_wr_valid),
       .wr_ready(tx_wr_ready),
       .wr_addr(tx_wr_addr),
+      .wr_data(tx_wr_data),
       // user FIFO
       .fifo_clock(fifo_clock),
       .fifo_data(tpc0_data),
@@ -180,11 +174,7 @@ module hififo_pcie
       .wr_valid(tx_wr_valid),
       .wr_addr(tx_wr_addr),
       .wr_ready(tx_wr_ready),
-      // write request ram (wrr)
-      .wrr_clock(fifo_clock),
-      .wrr_write(tx_wrr_write),
-      .wrr_data(tx_wrr_data),
-      .wrr_addr(tx_wrr_addr),
+      .wr_data(tx_wr_data),
       // AXI stream to PCI Express core
       .tx_tready(s_axis_tx_tready),
       .tx_tdata(s_axis_tx_tdata),
