@@ -14,7 +14,8 @@ module fwft_fifo
    input 	      o_clock,
    input 	      o_read,
    output [NBITS-1:0] o_data,
-   output 	      o_valid
+   output 	      o_valid,
+   output 	      o_almost_empty
    );
    
    parameter NBITS = 64; // 1 to 72 valid
@@ -34,7 +35,8 @@ module fwft_fifo
    assign o_data = b_d;
 
    assign i_ready = (count < 64);
-
+   assign o_almost_empty = (count < 15);
+   
    always @ (posedge i_clock)
      begin
 	if(i_valid)
@@ -59,7 +61,7 @@ module fwft_fifo
    assign o_valid = ~empty;
    FIFO_DUALCLOCK_MACRO  
      #(
-       .ALMOST_EMPTY_OFFSET(9'h100),
+       .ALMOST_EMPTY_OFFSET(9'h010),
        .ALMOST_FULL_OFFSET(9'h100),
        .DATA_WIDTH(NBITS),
        .DEVICE("7SERIES"),
@@ -68,7 +70,7 @@ module fwft_fifo
        ) 
    FIFO_DUALCLOCK_MACRO_inst 
      (
-      .ALMOSTEMPTY(),
+      .ALMOSTEMPTY(o_almost_empty),
       .ALMOSTFULL(almostfull),
       .DO(o_data),
       .EMPTY(empty),
