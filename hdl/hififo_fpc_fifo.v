@@ -44,25 +44,20 @@ module pcie_from_pc_fifo
    wire [63:0] 	    fifo_write_data;
    wire 	    fifo_ready;
    reg 		    fifo_write_0, fifo_write_1;
-      
+
+   genvar 	    i;
+   generate
+      for (i = 0; i < 8; i = i+1) begin: block_fill
+         always @(posedge clock)
+	   block_filled[i] <= reset ? 1'b0 : (write_last && (rc_tag == i)) || ((p_write[2:0] == i) ? 1'b0 : block_filled[i]);
+      end
+   endgenerate   
+   
    always @ (posedge clock)
      begin
 	pt_q <= pt[p_request[16:12]];
 	if(pio_wvalid && (pio_addr[12:5] == 2))
 	  pt[pio_addr[4:0]] <= pio_wdata[63:21];
-	if(reset)
-	  block_filled <= 8'd0;
-	else
-	  begin
-	     block_filled[0] <= (write_last && (rc_tag == 0)) || ((p_write[2:0] == 0) ? 1'b0 : block_filled[0]);
-	     block_filled[1] <= (write_last && (rc_tag == 1)) || ((p_write[2:0] == 1) ? 1'b0 : block_filled[1]);
-	     block_filled[2] <= (write_last && (rc_tag == 2)) || ((p_write[2:0] == 2) ? 1'b0 : block_filled[2]);
-	     block_filled[3] <= (write_last && (rc_tag == 3)) || ((p_write[2:0] == 3) ? 1'b0 : block_filled[3]);
-	     block_filled[4] <= (write_last && (rc_tag == 4)) || ((p_write[2:0] == 4) ? 1'b0 : block_filled[4]);
-	     block_filled[5] <= (write_last && (rc_tag == 5)) || ((p_write[2:0] == 5) ? 1'b0 : block_filled[5]);
-	     block_filled[6] <= (write_last && (rc_tag == 6)) || ((p_write[2:0] == 6) ? 1'b0 : block_filled[6]);
-	     block_filled[7] <= (write_last && (rc_tag == 7)) || ((p_write[2:0] == 7) ? 1'b0 : block_filled[7]);
-	  end
 	p_stop <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 6) ? pio_wdata[25:9] : p_stop);
 	p_int <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 7) ? pio_wdata[25:9] : p_int);
 	p_read <= reset ? 1'b0 : p_read + ((p_read[8:6] != p_write[2:0]) && fifo_ready);
