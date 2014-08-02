@@ -98,6 +98,6 @@ module pcie_tx
       .o_data({tx_1dw, tx_tlast, tx_tdata}),
       .o_valid(tx_tvalid),
       .o_almost_empty()
-      );  
+      );
 
 endmodule
