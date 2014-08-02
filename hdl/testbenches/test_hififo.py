@@ -78,8 +78,8 @@ class PCIe_host():
                 else:
                     address = combine2dw(self.rxdata[1] >> 32, self.rxdata[1])
                 if tlptype == 0b0000000: # read
-                    #print "{} bit read request".format(bits),
-                    #print "at 0x{:016X}, tag = 0x{:02X}, length = {} dw".format(address, int(self.rxdata[0] >> 40 & 0xFF), length)
+                    print "{} bit read request".format(bits),
+                    print "at 0x{:016X}, tag = 0x{:02X}, length = {} dw".format(address, int(self.rxdata[0] >> 40 & 0xFF), length)
                     reqid_tag = 0xFFFFFF & (self.rxdata[0] >> 40) 
                     self.complete(address, reqid_tag)
                 elif tlptype == 0b1000000: # write
@@ -99,7 +99,7 @@ class PCIe_host():
                 else:
                     print "unknown TLP ", hex(self.rxdata[0])
                 self.rxdata = []
-        t_tready.next = random.choice([1,1,1,1])
+        t_tready.next = random.choice([0,1,1,1])
         return
 
 def seq_wait(x):
@@ -129,7 +129,7 @@ for i in range(64*32):
     p.write_data_expected[i] = i | 0xDEADBEEF00000000
     
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid):
-    r = os.system ("iverilog -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../sync_gray.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v")
+    r = os.system ("iverilog -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../sync_gray.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v")
     if r!=0:
         print "iverilog returned ", r
         exit(1)

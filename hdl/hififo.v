@@ -6,7 +6,7 @@ module hififo_pcie
    input [15:0]  pci_id,
    // to core
    output reg 	 interrupt_out,
-   // AXI from core
+   // AXI to core
    input 	 s_axis_tx_tready,
    output [63:0] s_axis_tx_tdata,
    output 	 s_axis_tx_1dw,
