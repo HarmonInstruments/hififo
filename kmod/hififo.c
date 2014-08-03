@@ -312,10 +312,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     return retval;
   }
   device_create(hififo_class, NULL, MKDEV(MAJOR(dev), 0), NULL, "hififo");
-  
-  init_waitqueue_head(&drvdata->queue_read);
-  init_waitqueue_head(&drvdata->queue_write);
-  
+    
   retval = pcim_enable_device(pdev);
   if(retval){
     printk(KERN_ERR DEVICE_NAME ": pcim_enable_device() failed\n");
@@ -337,6 +334,24 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   pci_set_dma_mask(pdev, 0xFFFFFFFFFFFFFFFF);
 
   pci_set_consistent_dma_mask(pdev, 0xFFFFFFFFFFFFFFFF);
+
+  retval = pci_enable_msi(pdev);
+  if(retval < 0){
+    printk(KERN_ERR DEVICE_NAME ": pci_enable_msi() failed\n");
+    return retval;
+  }
+
+  retval = devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) hififo_interrupt, 0 /* flags */, DEVICE_NAME, drvdata);
+  if(retval){
+    printk(KERN_ERR DEVICE_NAME ": request_irq() failed\n");
+    return retval;
+  }
+
+  drvdata->pio_reg_base = (u64 *) pcim_iomap(pdev, 0, 65536);
+  printk(KERN_INFO DEVICE_NAME ": pci_resource_start(dev, 0) = 0x%.8llx, virt = 0x%.16llx\n", (u64) pci_resource_start(pdev, 0), (u64) drvdata->pio_reg_base);
+
+  init_waitqueue_head(&drvdata->queue_read);
+  init_waitqueue_head(&drvdata->queue_write);
 
   for(i=0; i<BUFFER_PAGES_FROM_PC; i++){
     drvdata->from_pc_buffer[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->from_pc_dma_addr[i]);
@@ -364,21 +379,6 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     }
   }
 
-  retval = pci_enable_msi(pdev);
-  if(retval < 0){
-    printk(KERN_ERR DEVICE_NAME ": pci_enable_msi() failed\n");
-    return retval;
-  }
-
-  retval = devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) hififo_interrupt, 0 /* flags */, DEVICE_NAME, drvdata);
-  if(retval){
-    printk(KERN_ERR DEVICE_NAME ": request_irq() failed\n");
-    return retval;
-  }
-
-  drvdata->pio_reg_base = (u64 *) pcim_iomap(pdev, 0, 65536);
-  printk(KERN_INFO DEVICE_NAME ": pci_resource_start(dev, 0) = 0x%.8llx, virt = 0x%.16llx\n", (u64) pci_resource_start(pdev, 0), (u64) drvdata->pio_reg_base);
-  
   for(i=0; i<8; i++)
     printk("bar0[%d] = %llx\n", i, (u64) fifo_readreg(i));
 
