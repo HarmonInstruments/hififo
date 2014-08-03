@@ -1,4 +1,4 @@
-obj-m := vna_dsp.o
+obj-m := hififo.o
 KERNEL_SOURCE = /lib/modules/$(shell uname -r)/build
 HOST := vna
 all:
