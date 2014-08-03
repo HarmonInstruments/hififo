@@ -133,7 +133,10 @@ for i in range(128):
 # enable FIFOs
 p.write(0, 8*8)
 p.write(0x00040400, 3*8)
+p.write(0x100, 4*8)
 p.write(0x00300000, 6*8)
+p.write(0x100, 7*8)
+p.read(0*8, 1)
 p.read(1*8, 1)
 p.read(5*8, 1)
 p.completion_data[0] = seq_wait(64)

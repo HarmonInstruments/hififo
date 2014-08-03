@@ -43,7 +43,7 @@ module hififo_tpc_fifo
    reg [42:0] 	     pt_q;
    reg [22:0] 	     p_out; // 8 bytes
    reg [18:0] 	     p_stop; // 128 bytes
-   reg [18:0] 	     p_int; // 128 bytes
+   reg [18:0] 	     p_int = 0; // 128 bytes
    wire 	     o_almost_empty;
    wire [63:0] 	     wr_data_i;
    
@@ -60,7 +60,7 @@ module hififo_tpc_fifo
 	wr_data <= wr_data_i;
 	p_out <= reset ? 1'b0 : p_out + wr_ready;
 	p_stop <= reset ? 1'b0 : ((pio_wvalid && (pio_addr == 3)) ? pio_wdata[26:7] : p_stop);
-	p_int  <= reset ? 1'b0 : ((pio_wvalid && (pio_addr == 4)) ? pio_wdata[26:7] : p_int );
+	p_int  <= (pio_wvalid && (pio_addr == 4)) ? pio_wdata[26:7] : p_int;
 	if(pio_wvalid && (pio_addr[12:5] == 1))
 	  pt[pio_addr[4:0]] <= pio_wdata[63:21];
 	interrupt <= {(p_stop == p_out[22:4]), (p_int == p_out[22:4])};
