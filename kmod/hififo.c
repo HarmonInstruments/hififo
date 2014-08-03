@@ -76,6 +76,7 @@ struct hififo_fifo1 {
 struct hififo_fifo {
   struct hififo_fifo1 to_pc;
   struct hififo_fifo1 from_pc;
+  u64 *pio_reg_base;
   struct cdev cdev;
 };
 
@@ -285,23 +286,6 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     printk(KERN_ERR DEVICE_NAME "failed to alloc drvdata\n");
     return -ENOMEM;
   }
-
-  retval = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME);
-  if (retval) {
-    printk(KERN_ERR DEVICE_NAME ": alloc_chrdev_region() failed\n");
-    return retval;
-  }
-  
-  drvdata->major = MAJOR(dev);
-  cdev_init(&drvdata->hififo_cdev, &fops);
-  drvdata->hififo_cdev.owner = THIS_MODULE;
-  drvdata->hififo_cdev.ops = &fops;
-  retval = cdev_add (&drvdata->hififo_cdev, MKDEV(MAJOR(dev), 0), 1);
-  if (retval){
-    printk(KERN_NOTICE DEVICE_NAME ": Error %d adding cdev\n", retval);
-    return retval;
-  }
-  device_create(hififo_class, NULL, MKDEV(MAJOR(dev), 0), NULL, "hififo");
     
   retval = pcim_enable_device(pdev);
   if(retval){
@@ -312,7 +296,6 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   retval = pci_request_regions(pdev, DEVICE_NAME);
   if(retval < 0){
     printk(KERN_ERR DEVICE_NAME ": pci_request_regions() failed\n");
-    pci_disable_device(pdev);
     return retval;
   }
 
@@ -340,8 +323,27 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   drvdata->pio_reg_base = (u64 *) pcim_iomap(pdev, 0, 65536);
   printk(KERN_INFO DEVICE_NAME ": pci_resource_start(dev, 0) = 0x%.8llx, virt = 0x%.16llx\n", (u64) pci_resource_start(pdev, 0), (u64) drvdata->pio_reg_base);
 
+
+  retval = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME);
+  if (retval) {
+    printk(KERN_ERR DEVICE_NAME ": alloc_chrdev_region() failed\n");
+    return retval;
+  }
+  
+  drvdata->major = MAJOR(dev);
+  cdev_init(&drvdata->hififo_cdev, &fops);
+  drvdata->hififo_cdev.owner = THIS_MODULE;
+  drvdata->hififo_cdev.ops = &fops;
+  retval = cdev_add (&drvdata->hififo_cdev, MKDEV(MAJOR(dev), 0), 1);
+  if (retval){
+    printk(KERN_NOTICE DEVICE_NAME ": Error %d adding cdev\n", retval);
+    return retval;
+  }
+  device_create(hififo_class, NULL, MKDEV(MAJOR(dev), 0), NULL, "hififo");
+
   drvdata->fifo[0].to_pc.enabled = 1;
   drvdata->fifo[0].from_pc.enabled = 1;
+  drvdata->fifo[0].pio_reg_base = drvdata->pio_reg_base;
 
   init_waitqueue_head(&drvdata->fifo[0].to_pc.queue);
   init_waitqueue_head(&drvdata->fifo[0].from_pc.queue);
