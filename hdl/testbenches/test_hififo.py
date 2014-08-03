@@ -30,7 +30,7 @@ class PCIe_host():
         self.txqueue.put([address | (endianswap(data) << 32), 0])
         self.txqueue.put([endianswap(data >> 32), 1])
     def read(self, address, tag=0):
-        self.txqueue.put([0xbeef00ff00000002 | tag << 40, 0])
+        self.txqueue.put([0xbeef00ff00000001 | tag << 40, 0])
         self.txqueue.put([address, 1])
         self.read_outstanding = 1
     def complete(self, address, reqid_tag):
@@ -93,7 +93,6 @@ class PCIe_host():
                         print "d[{}] = 0x{:016X}".format(i, d)
                 elif tlptype == 0b1001010: # read completion
                     data = endianswap(self.rxdata[1]>>32)
-                    data |= endianswap(self.rxdata[2])
                     print "read completion, data = ", data
                     self.read_outstanding = 0
                 else:
@@ -119,6 +118,7 @@ for i in range(128):
 p.write(0, 8*8)
 p.write(0x00040400, 3*8)
 p.write(0x00300000, 6*8)
+p.read(1*8, 1)
 p.read(5*8, 1)
 p.completion_data[0] = seq_wait(64)
 p.completion_data[1] = seq_wait(64)

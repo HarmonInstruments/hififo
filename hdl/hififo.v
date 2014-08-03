@@ -45,7 +45,7 @@ module hififo_pcie
 
    // read completion request to TX module
    wire [31:0] 	tx_rc_dw2;
-   reg [63:0] 	tx_rc_data;
+   reg [31:0] 	tx_rc_data;
    reg 		tx_rc_done = 0;
    
    wire 	tx_rr_valid;
@@ -66,7 +66,7 @@ module hififo_pcie
    reg [1:0] 	reset_fifo_0 = 3;
    reg [1:0] 	reset_fifo = 3;
    
-   wire [63:0] 	fpc_status, tpc_status;
+   wire [31:0] 	fpc_status, tpc_status;
          
    always @ (posedge clock)
      begin

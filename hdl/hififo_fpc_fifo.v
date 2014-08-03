@@ -3,7 +3,7 @@ module pcie_from_pc_fifo
    input 	    clock,
    input 	    reset,
    output reg [1:0] interrupt = 0,
-   output [63:0]    status,
+   output [31:0]    status,
    // PIO
    input 	    pio_wvalid,
    input [63:0]     pio_wdata,
