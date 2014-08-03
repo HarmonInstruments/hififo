@@ -1,23 +1,23 @@
 module fpc_rr_mux
   (
-   input 	    clock,
-   input 	    reset,
+   input 	 clock,
+   input 	 reset,
    // PIO for page table writes
-   input 	    pio_wvalid,
-   input [63:0]     pio_wdata,
-   input [12:0]     pio_addr,
+   input 	 pio_wvalid,
+   input [63:0]  pio_wdata,
+   input [12:0]  pio_addr,
    // read request in
-   input [3:0] 	    rr_valid,
-   output reg [3:0] rr_ready,
-   input [63:0]     rr0_addr,
-   input [63:0]     rr1_addr,
-   input [63:0]     rr2_addr,
-   input [63:0]     rr3_addr,
+   input [3:0] 	 rr_valid,
+   output [3:0]  rr_ready,
+   input [63:0]  rr0_addr,
+   input [63:0]  rr1_addr,
+   input [63:0]  rr2_addr,
+   input [63:0]  rr3_addr,
    // rr request multiplexed
-   output 	    rrm_valid,
-   output [63:0]    rrm_addr,
-   output [7:0]     rrm_tag,
-   input 	    rrm_ready
+   output 	 rrm_valid,
+   output [63:0] rrm_addr,
+   output [7:0]  rrm_tag,
+   input 	 rrm_ready
    );
 
    reg [6:0] 	 pt_addr;
@@ -29,7 +29,11 @@ module fpc_rr_mux
    assign rrm_valid = state[1:0] == 3;
    assign rrm_tag[2:0] = rrm_la[2:0];
    assign rrm_tag[7:3] = state[3:2];
-   
+   assign rr_ready[0] = rrm_ready && (state == 3);
+   assign rr_ready[1] = rrm_ready && (state == 7);
+   assign rr_ready[2] = rrm_ready && (state == 11);
+   assign rr_ready[3] = rrm_ready && (state == 15);
+
    always @ (posedge clock)
      begin
 	if(reset)
@@ -53,11 +57,6 @@ module fpc_rr_mux
 	  8:  {pt_addr, rrm_la} <= {2'd2, rr2_addr[25:9]};
 	  12: {pt_addr, rrm_la} <= {2'd3, rr3_addr[25:9]};
 	endcase
-	rr_ready[0] <= rrm_ready && (state == 3);
-	rr_ready[1] <= rrm_ready && (state == 7);
-	rr_ready[2] <= rrm_ready && (state == 11);
-	rr_ready[3] <= rrm_ready && (state == 15);
-	
    end
    
    block_ram #(.DBITS(43), .ABITS(7)) bram_pt_fpc
