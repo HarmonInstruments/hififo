@@ -1,3 +1,21 @@
+/* 
+ * HIFIFO: Harmon Instruments PCI Express to FIFO
+ * Copyright (C) 2014 Harmon Instruments, LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/
+ */
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -8,6 +26,9 @@
 #include <sys/ioctl.h>
 
 #define IOC_INFO 0x10
+
+#define min(x,y) ((x) > (y) ? (y) : (x))
+#define max(x,y) ((x) < (y) ? (y) : (x))
 
 struct fifodev
 {
@@ -43,6 +64,7 @@ struct fifodev * fifo_open(char * filename)
   f->write_size = tmp[1];
   f->read_pointer = tmp[2];
   f->write_pointer = tmp[3];
+  fprintf(stderr, "read_size = %ld, write_size = %ld\n", f->read_size, f->write_size);
   
   f->read_base = mmap(NULL, 2 * (f->read_size + f->write_size), PROT_READ | PROT_WRITE, MAP_SHARED, f->fd, 0);
   if(f->read_base == MAP_FAILED) {
@@ -109,6 +131,7 @@ void * fifo_write_get(struct fifodev *f, uint64_t count){
     return NULL;
   }
   f->write_available = tmp;
+  //fprintf(stderr, "fifo_write_get: %lx available\n", tmp);
   if(tmp < count)
     return NULL;
   return f->write_base + f->write_pointer;
@@ -117,6 +140,7 @@ void * fifo_write_get(struct fifodev *f, uint64_t count){
 uint64_t fifo_write_put(struct fifodev *f, uint64_t count){
   f->write_available -= count;
   f->write_pointer += count;
+  f->write_pointer &= f->write_mask;
   if(ioctl(f->fd, _IO('f',0x14), count) != 0){
     perror("hififo.c: fifo_write_put() failed");
     return -1;
@@ -132,52 +156,67 @@ uint64_t fifo_set_timeout(struct fifodev *f, uint64_t timeout){
   return 0;
 }
 
-int main ( int argc, char **argv )
+void writer(struct fifodev *f, uint64_t count)
+{
+  uint64_t rcount = 0;
+  uint64_t wcount = 0xDEADE00000000000;
+  for(uint64_t i=0; i<count; i+=rcount){
+    rcount = min(f->write_size/2, count-i);
+    uint64_t *wbuf = fifo_write_get(f, rcount);
+    //fprintf(stderr, "writer: i = %lx, rcount = %lx, available = %lx, wbuf = %lx\n", i, rcount, f->write_available, (uint64_t) wbuf);
+    if(wbuf == NULL){
+      fprintf(stderr, "writer failed to get buffer\n");
+      return;
+    }
+    for(uint64_t j=0; j<(rcount>>3); j++)
+      wbuf[j] = wcount++;
+    fifo_write_put(f, rcount);
+  }
+};
+
+void checker(struct fifodev *f, uint64_t count)
 {
   uint64_t expected = 0;
-  uint64_t count;
+  uint64_t rcount = 0;
   int prints = 0;
-  struct fifodev *fifodev = fifo_open("/dev/vna");
-  if(fifodev == NULL)
-    exit(EXIT_FAILURE);
-  fprintf(stderr, "f->read_pointer = %ld\n", fifodev->read_pointer);
-  uint64_t *wbuf = fifo_write_get(fifodev, 1048576);
-  if(wbuf != NULL)
-    for(int i=0; i<131072; i++)
-      wbuf[i] = 0xDEAD000000000000 + i;
-  fifo_write_put(fifodev, 1048576);
-  
-  uint64_t * d = fifo_read_get(fifodev, 8192);
-  fprintf(stderr, "f->read_pointer = %ld\n", fifodev->read_pointer);
-  printf("count = %ld\n", fifodev->read_available);
-  if(d != NULL){
-    fprintf(stderr, "d[0] = %.16lx\n", d[0]);
-    fifo_read_free(fifodev, 8192);
-  }
-  else
-    fprintf(stderr, "d = NULL\n");
-
-  fprintf(stderr, "f->read_pointer = %ld\n", fifodev->read_pointer);
-  
-  for(long i=0;i<1024UL*1UL*1000UL;i+=count){
-    d = fifo_read_get(fifodev, 1*1024);
-    count = fifodev->read_available & ~7;
+  for(uint64_t i=0; i<count; i+=rcount){
+    rcount = min(f->read_size/2, count-i);
+    uint64_t * d = fifo_read_get(f, rcount);
     if(d == NULL){
-      printf("failed to read, count = %ld\n", count);
+      fprintf(stderr, "failed to read, count = %ld, avaliable = %ld\n", rcount, f->read_available);
       exit(EXIT_FAILURE);
     }
-    for(int j=0; j<count/8; j++){
-      if((expected != d[j]) && (prints < 32))
+    for(int j=0; j<(rcount>>3); j++){
+      if((expected != d[j]))
 	{
-	  printf("error at %lx, %x, rval = 0x%.16lx\n", i, j, d[j]);
+	  fprintf(stderr, "error at %lx, %x, rval = 0x%.16lx, expected = 0x%.16lx\n", i, j, d[j], expected);
 	  prints++;
 	}
       expected = d[j] + 1; 
     }
-    fifo_read_free(fifodev, count);
+    fifo_read_free(f, rcount);
+    //fprintf(stderr, "read %ld bytes\n", rcount);
   }
-  printf("read %ld bytes\n", count);
+  fprintf(stderr, "read %ld bytes\n", count);
+}
 
+int main ( int argc, char **argv )
+{
+  uint64_t length = 1048576L*1024L*10L;
+  struct fifodev *fifodev = fifo_open("/dev/hififo");
+  if(fifodev == NULL)
+    exit(EXIT_FAILURE);
+  #pragma omp parallel sections
+  {
+    #pragma omp section
+    {
+      writer(fifodev, length);
+    }
+    #pragma omp section
+    {
+      checker(fifodev, length);
+    }
+  }
   fifo_close(fifodev);
 
   return 0;

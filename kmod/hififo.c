@@ -31,13 +31,13 @@
 #define VENDOR_ID 0x10EE
 #define DEVICE_ID 0x7024
 #define SUCCESS 0
-#define DEVICE_NAME "vna_dsp"
+#define DEVICE_NAME "hififo"
 
 #define HIFIFO_IOC_MAGIC 'f'
 
 #define MAX_FIFOS 8
 
-static struct pci_device_id vna_dsp_pci_table[] = {
+static struct pci_device_id hififo_pci_table[] = {
   {VENDOR_ID, DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID, 0, 0 ,0},
   {0,}
 };
@@ -62,7 +62,7 @@ static struct pci_device_id vna_dsp_pci_table[] = {
 
 #define IOC_INFO 0x10
 
-static struct class *vna_class;
+static struct class *hififo_class;
 
 struct hififo_fifo1 {
   dma_addr_t dma_addr[BUFFER_MAX_PAGES];
@@ -100,7 +100,7 @@ struct hififo_dev {
 #define fifo_writereg(data, addr) (writeq(cpu_to_le64(data), &drvdata->pio_reg_base[addr]))
 #define fifo_readreg(addr) le32_to_cpu(readl(&drvdata->pio_reg_base[addr]))
 
-static int vna_dsp_open(struct inode *inode, struct file *filp){
+static int hififo_open(struct inode *inode, struct file *filp){
   struct hififo_dev *drvdata = container_of(inode->i_cdev, struct hififo_dev, hififo_cdev);
   filp->private_data = drvdata;
   printk("hififo: open\n");
@@ -111,7 +111,7 @@ static int vna_dsp_open(struct inode *inode, struct file *filp){
   return SUCCESS;
 }
 
-static int vna_dsp_release(struct inode *inode, struct file *filp){
+static int hififo_release(struct inode *inode, struct file *filp){
   struct hififo_dev *drvdata = filp->private_data;
   drvdata->is_open--;
   module_put(THIS_MODULE); // decrement the usage count
@@ -165,7 +165,7 @@ static u64 wait_bytes_in_ring_from_pc(struct hififo_dev *drvdata, u64 desired_by
   return bytes_in_buffer;
 }
 
-static ssize_t vna_dsp_read(struct file *filp,
+static ssize_t hififo_read(struct file *filp,
 			    char *buffer,
 			    size_t length,
 			    loff_t * offset){
@@ -173,7 +173,7 @@ static ssize_t vna_dsp_read(struct file *filp,
   return -EINVAL;
 }
 
-static ssize_t vna_dsp_write(struct file *filp,
+static ssize_t hififo_write(struct file *filp,
 			     const char *buf,
 			     size_t length,
 			     loff_t * off){
@@ -181,7 +181,7 @@ static ssize_t vna_dsp_write(struct file *filp,
   return -EINVAL;
 }
 
-static long vna_dsp_ioctl (struct file *file, unsigned int command, unsigned long arg){
+static long hififo_ioctl (struct file *file, unsigned int command, unsigned long arg){
   struct hififo_dev *drvdata = file->private_data;
   u64 tmp[8];
   switch(command) {
@@ -218,7 +218,7 @@ static long vna_dsp_ioctl (struct file *file, unsigned int command, unsigned lon
   return -ENOTTY;
 }
 
-static int vna_dsp_mmap(struct file *file, struct vm_area_struct *vma)
+static int hififo_mmap(struct file *file, struct vm_area_struct *vma)
 {
   struct hififo_dev *drvdata = file->private_data;
   unsigned long size;
@@ -265,26 +265,26 @@ static int vna_dsp_mmap(struct file *file, struct vm_area_struct *vma)
 }
 
 static struct file_operations fops = {
- .read = vna_dsp_read,
- .write = vna_dsp_write,
- .unlocked_ioctl = vna_dsp_ioctl,
- .mmap = vna_dsp_mmap,
- .open = vna_dsp_open,
- .release = vna_dsp_release
+ .read = hififo_read,
+ .write = hififo_write,
+ .unlocked_ioctl = hififo_ioctl,
+ .mmap = hififo_mmap,
+ .open = hififo_open,
+ .release = hififo_release
 };
 
-static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
+static irqreturn_t hififo_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   struct hififo_dev *drvdata = dev_id;
   u64 sr = fifo_readreg(REG_INTERRUPT);
   if(sr & 0x0003)
     wake_up_all(&drvdata->queue_read);
   if(sr & 0x000C)
     wake_up_all(&drvdata->queue_write);
-  printk("VNA interrupt: sr = %llx\n", sr);
+  printk("hififo interrupt: sr = %llx\n", sr);
   return IRQ_HANDLED;
 }
 
-static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
+static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   int i, j;
   int retval;
   dev_t dev = 0;
@@ -311,7 +311,7 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     printk(KERN_NOTICE DEVICE_NAME ": Error %d adding cdev\n", retval);
     return retval;
   }
-  device_create(vna_class, NULL, MKDEV(MAJOR(dev), 0), NULL, "vna");
+  device_create(hififo_class, NULL, MKDEV(MAJOR(dev), 0), NULL, "hififo");
   
   init_waitqueue_head(&drvdata->queue_read);
   init_waitqueue_head(&drvdata->queue_write);
@@ -370,7 +370,7 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     return retval;
   }
 
-  retval = devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) vna_interrupt, 0 /* flags */, DEVICE_NAME, drvdata);
+  retval = devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) hififo_interrupt, 0 /* flags */, DEVICE_NAME, drvdata);
   if(retval){
     printk(KERN_ERR DEVICE_NAME ": request_irq() failed\n");
     return retval;
@@ -405,38 +405,38 @@ static int vna_dsp_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   return 0;
 }
 
-static void vna_dsp_remove(struct pci_dev *pdev){
+static void hififo_remove(struct pci_dev *pdev){
   struct hififo_dev *drvdata = pci_get_drvdata(pdev);
   fifo_writereg(0xF, REG_RESET);
-  device_destroy(vna_class, MKDEV(drvdata->major, 0));
+  device_destroy(hififo_class, MKDEV(drvdata->major, 0));
 }
 
-static struct pci_driver vna_dsp_driver = {
-  .name = "vna_dsp",
-  .id_table = vna_dsp_pci_table,
-  .probe = vna_dsp_probe,
-  .remove = vna_dsp_remove,
+static struct pci_driver hififo_driver = {
+  .name = "hififo",
+  .id_table = hififo_pci_table,
+  .probe = hififo_probe,
+  .remove = hififo_remove,
   // see Documentation/PCI/pci.txt - pci_register_driver call
 };
 
-static int __init vna_dsp_init(void){
-  printk ("Loading vna_dsp kernel module\n");
-  vna_class = class_create(THIS_MODULE, "vna");
-  if (IS_ERR(vna_class)) {
-    printk(KERN_ERR "Error creating vna class.\n");
+static int __init hififo_init(void){
+  printk ("Loading hififo kernel module\n");
+  hififo_class = class_create(THIS_MODULE, "hififo");
+  if (IS_ERR(hififo_class)) {
+    printk(KERN_ERR "Error creating hififo class.\n");
     //goto error;
   }
-  return pci_register_driver(&vna_dsp_driver);
+  return pci_register_driver(&hififo_driver);
 }
 
-static void __exit vna_dsp_exit(void){
-  pci_unregister_driver(&vna_dsp_driver);
-  class_destroy(vna_class);
-  printk ("Unloading vna_dsp kernel module.\n");
+static void __exit hififo_exit(void){
+  pci_unregister_driver(&hififo_driver);
+  class_destroy(hififo_class);
+  printk ("Unloading hififo kernel module.\n");
   return;
 }
 
-module_init(vna_dsp_init);
-module_exit(vna_dsp_exit);
+module_init(hififo_init);
+module_exit(hififo_exit);
 
 MODULE_LICENSE("GPL");
