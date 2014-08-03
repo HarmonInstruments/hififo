@@ -29,10 +29,6 @@ module vna_dsp
    );
 
    wire 	    clock;
-
-   wire 	    pio_write_valid;
-   wire [63:0] 	    pio_write_data;
-   wire [12:0] 	    pio_address;
    
    reg [63:0] 	    tpc_data = 0;
    reg 		    tpc_write = 0;
@@ -70,9 +66,6 @@ module vna_dsp
       .m_axis_rx_tvalid(m_axis_rx_tvalid),
       .m_axis_rx_tlast(m_axis_rx_tlast),
       .m_axis_rx_tdata(m_axis_rx_tdata),
-      .pio_write_valid(pio_write_valid),
-      .pio_write_data(pio_write_data),
-      .pio_address(pio_address),
       .fifo_clock(clock),
       .tpc0_reset(),
       .tpc0_data(tpc_data),
@@ -84,32 +77,14 @@ module vna_dsp
       .fpc0_valid(fpc_valid)
       );
    
-   reg 		    use_count = 1;
-      
    always @ (posedge clock)
      begin
 	if(fpc_valid)
 	  led[3:0] <= fpc_data[3:0];
-	if(pio_write_valid && (pio_address == 15))
-	  use_count <= pio_write_data[0];
 	
-	if(~use_count)
-	  begin
-	     fpc_read <= tpc_ready;
-	     tpc_write <= fpc_valid && fpc_read;
-	     tpc_data <= fpc_data;
-	  end
-	else if(tpc_ready)
-	  begin
-	     fpc_read <= 1'b0;
-	     tpc_write <= 1'b1;
-	     tpc_data <= tpc_data + 1'b1;
-	  end
-	else
-	  begin
-	     fpc_read <= 1'b0;
-	     tpc_write <= 1'b0;
-	  end
+	fpc_read <= tpc_ready;
+	tpc_write <= fpc_valid && fpc_read;
+	tpc_data <= fpc_data;
      end
    pcie_core_wrap pcie_core_wrap
      (.pci_exp_txp(pcie_txp),

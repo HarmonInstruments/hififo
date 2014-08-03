@@ -51,11 +51,7 @@ module tb_hififo_pcie;
       .fpc0_reset(),
       .fpc0_data(fpc0_data),
       .fpc0_read(fpc0_read),
-      .fpc0_valid(fpc0_valid),
-      // PIO
-      .pio_write_valid(),
-      .pio_write_data(),
-      .pio_address()
+      .fpc0_valid(fpc0_valid)
       );
 
    sequencer sequencer

@@ -60,7 +60,7 @@ module pcie_tx
 	  case(state)
 	    0:  state <= fi_ready ? ((rc_valid & (state != 3)) ? 3'd1 : (rr_valid ? 3'd4 : (wr_valid ? 3'd6 : 3'd0))) : 1'b0;
 	    3:  state <= fi_ready ? ((rc_valid & (state != 3)) ? 3'd1 : (rr_valid ? 3'd4 : (wr_valid ? 3'd6 : 3'd0))) : 1'b0;
-	    5:  state <= fi_ready ? ((rc_valid & (state != 3)) ? 3'd1 : (rr_valid ? 3'd4 : (wr_valid ? 3'd6 : 3'd0))) : 1'b0;
+	    5:  state <= fi_ready ? ((rc_valid & (state != 3)) ? 3'd1 : (rr_valid ? 3'd0 : (wr_valid ? 3'd6 : 3'd0))) : 1'b0;
 	    23: state <= fi_ready ? ((rc_valid & (state != 3)) ? 3'd1 : (rr_valid ? 3'd4 : (wr_valid ? 3'd6 : 3'd0))) : 1'b0;
 	    default: state <= state + 1'b1;
 	  endcase
