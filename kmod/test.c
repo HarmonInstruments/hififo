@@ -26,6 +26,11 @@
 #include <sys/ioctl.h>
 
 #define IOC_INFO 0x10
+#define IOC_GET_TO_PC 0x11
+#define IOC_PUT_TO_PC 0x12
+#define IOC_GET_FROM_PC 0x13
+#define IOC_PUT_FROM_PC 0x14
+#define IOC_SET_TIMEOUT 0x15
 
 #define min(x,y) ((x) > (y) ? (y) : (x))
 #define max(x,y) ((x) < (y) ? (y) : (x))
@@ -100,7 +105,7 @@ void fifo_close(struct fifodev *f){
 void * fifo_read_get(struct fifodev *f, uint64_t count){
   if(count < f->read_available)
     return f->read_base + f->read_pointer;
-  long tmp = ioctl(f->fd, _IO('f',0x11), count);
+  long tmp = ioctl(f->fd, _IO('f', IOC_GET_TO_PC), count);
   if(tmp < 0){
     perror("hififo.c: fifo_read_get failed");
     return NULL;
@@ -115,7 +120,7 @@ int fifo_read_free(struct fifodev *f, uint64_t count){
   f->read_available -= count;
   f->read_pointer += count;
   f->read_pointer &= f->read_mask;
-  if(ioctl(f->fd, _IO('f',0x12), count) != 0){
+  if(ioctl(f->fd, _IO('f', IOC_PUT_TO_PC), count) != 0){
     perror("hififo.c: fifo_read_free() failed");
     return -1;
   }
@@ -125,7 +130,7 @@ int fifo_read_free(struct fifodev *f, uint64_t count){
 void * fifo_write_get(struct fifodev *f, uint64_t count){
   if(count < f->write_available)
     return f->write_base + f->write_pointer;
-  long tmp = ioctl(f->fd, _IO('f',0x13), count);
+  long tmp = ioctl(f->fd, _IO('f', IOC_GET_FROM_PC), count);
   if(tmp < 0){
     perror("hififo.c: fifo_write_get() failed");
     return NULL;
@@ -141,7 +146,7 @@ uint64_t fifo_write_put(struct fifodev *f, uint64_t count){
   f->write_available -= count;
   f->write_pointer += count;
   f->write_pointer &= f->write_mask;
-  if(ioctl(f->fd, _IO('f',0x14), count) != 0){
+  if(ioctl(f->fd, _IO('f', IOC_PUT_FROM_PC), count) != 0){
     perror("hififo.c: fifo_write_put() failed");
     return -1;
   }
@@ -149,7 +154,7 @@ uint64_t fifo_write_put(struct fifodev *f, uint64_t count){
 }
 
 uint64_t fifo_set_timeout(struct fifodev *f, uint64_t timeout){
-  if(ioctl(f->fd, _IO('f',0x15), timeout) != 0){
+  if(ioctl(f->fd, _IO('f', IOC_SET_TIMEOUT), timeout) != 0){
     perror("hififo.c: fifo_set_timeout() failed");
     return -1;
   }

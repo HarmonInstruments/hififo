@@ -38,6 +38,7 @@
 #define IOC_PUT_TO_PC 0x12
 #define IOC_GET_FROM_PC 0x13
 #define IOC_PUT_FROM_PC 0x14
+#define IOC_SET_TIMEOUT 0x15
 
 #define MAX_FIFOS 4
 
