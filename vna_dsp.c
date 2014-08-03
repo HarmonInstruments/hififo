@@ -40,7 +40,7 @@ static struct pci_device_id vna_dsp_pci_table[] = {
 #define REG_FROM_PC_MATCH 7
 #define REG_RESET 8
 #define REG_TO_PC_PAGE_TABLE_BASE 32
-#define REG_FROM_PC_PAGE_TABLE_BASE 64
+#define REG_FROM_PC_PAGE_TABLE_BASE 128
 
 #define IOC_INFO 0x10
 
@@ -80,7 +80,7 @@ struct hififo_dev {
 };
 
 #define fifo_writereg(data, addr) (writeq(cpu_to_le64(data), &drvdata->pio_reg_base[addr]))
-#define fifo_readreg(addr) le64_to_cpu(readq(&drvdata->pio_reg_base[addr]))
+#define fifo_readreg(addr) le32_to_cpu(readl(&drvdata->pio_reg_base[addr]))
 
 static int vna_dsp_open(struct inode *inode, struct file *filp){
   struct hififo_dev *drvdata = container_of(inode->i_cdev, struct hififo_dev, hififo_cdev);
@@ -121,8 +121,16 @@ static u64 wait_bytes_in_ring_to_pc(struct hififo_dev *drvdata, u64 desired_byte
 }
 
 static u64 get_bytes_in_ring_from_pc(struct hififo_dev *drvdata){
-  u64 bytes_in_buffer = (fifo_readreg(REG_FROM_PC_COUNT) - drvdata->from_pc_pointer) & (BUFFER_SIZE_FROM_PC - 1);
-  return (BUFFER_SIZE_FROM_PC - 1024) - bytes_in_buffer;
+  u64 bytes_in_buffer = fifo_readreg(REG_FROM_PC_COUNT);
+  bytes_in_buffer = fifo_readreg(REG_FROM_PC_COUNT);
+  while((bytes_in_buffer & 0x03) != 0){
+    bytes_in_buffer = fifo_readreg(REG_FROM_PC_COUNT);
+    printk("retry: REG_FROM_PC_COUNT = %llx\n", bytes_in_buffer);
+  }
+  bytes_in_buffer = (drvdata->from_pc_pointer - bytes_in_buffer);
+  bytes_in_buffer &= (BUFFER_SIZE_FROM_PC - 1);
+  bytes_in_buffer = (BUFFER_SIZE_FROM_PC - 1024) - bytes_in_buffer;
+  return bytes_in_buffer;
 }
 
 static u64 wait_bytes_in_ring_from_pc(struct hififo_dev *drvdata, u64 desired_bytes){
@@ -254,7 +262,7 @@ static irqreturn_t vna_interrupt(int irq, void *dev_id, struct pt_regs *regs){
     wake_up_all(&drvdata->queue_read);
   if(sr & 0x000C)
     wake_up_all(&drvdata->queue_write);
-  //printk("VNA interrupt: sr = %llx\n", sr);
+  printk("VNA interrupt: sr = %llx\n", sr);
   return IRQ_HANDLED;
 }
 
