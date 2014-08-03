@@ -1,22 +1,20 @@
-/* 
- * HIFIFO: Harmon Instruments PCI Express to FIFO
- * Copyright (C) 2014 Harmon Instruments, LLC
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/
- */
-
 #!/usr/bin/env python
+
+# HIFIFO: Harmon Instruments PCI Express to FIFO
+# Copyright (C) 2014 Harmon Instruments, LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/
  
 import sys, os, random, Queue
 import numpy as np
@@ -148,7 +146,7 @@ for i in range(64*32):
     p.write_data_expected[i] = i | 0xDEADBEEF00000000
     
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid):
-    r = os.system ("iverilog -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../sync_gray.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v")
+    r = os.system ("iverilog -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v")
     if r!=0:
         print "iverilog returned ", r
         exit(1)

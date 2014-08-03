@@ -18,3 +18,5 @@ runtest:
 	make -C kmod runtest
 reload:
 	make -C kmod reload
+testbench:
+	make -C hdl/testbenches tb_hififo
