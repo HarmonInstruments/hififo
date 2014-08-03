@@ -1,9 +1,16 @@
 *.jou
 *.log
-*~
 *.bin
 *.vvp
 *.vcd
 *.pyc
 *.out
 xbuild
+*.cmd
+*.symvers
+*.order
+*~
+*.ko
+*.o
+*.mod.c
+.tmp_versions
