@@ -1,0 +1,9 @@
+*.jou
+*.log
+*~
+*.bin
+*.vvp
+*.vcd
+*.pyc
+*.out
+xbuild
