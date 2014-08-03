@@ -30,7 +30,7 @@ class PCIe_host():
         self.txqueue.put([address | (endianswap(data) << 32), 0])
         self.txqueue.put([endianswap(data >> 32), 1])
     def read(self, address, tag=0):
-        self.txqueue.put([0xbeef00ff00000002 | tag << 40, 0])
+        self.txqueue.put([0xbeef00ff00000001 | tag << 40, 0])
         self.txqueue.put([address, 1])
         self.read_outstanding = 1
     def complete(self, address, reqid_tag):
@@ -93,7 +93,6 @@ class PCIe_host():
                         print "d[{}] = 0x{:016X}".format(i, d)
                 elif tlptype == 0b1001010: # read completion
                     data = endianswap(self.rxdata[1]>>32)
-                    data |= endianswap(self.rxdata[2])
                     print "read completion, data = ", data
                     self.read_outstanding = 0
                 else:
@@ -113,11 +112,13 @@ p.write(0xF, 0*8)
 # load page tables
 for i in range(32):
     p.write(1024*1024*2*i | 0x1000000000, (32+i)*8)
-    p.write(1024*1024*2*i | 0x1000000000, (64+i)*8)
+for i in range(128):
+    p.write(1024*1024*2*i | 0x1000000000, (128+i)*8)
 # enable FIFOs
 p.write(0, 8*8)
 p.write(0x00040400, 3*8)
 p.write(0x00300000, 6*8)
+p.read(1*8, 1)
 p.read(5*8, 1)
 p.completion_data[0] = seq_wait(64)
 p.completion_data[1] = seq_wait(64)
@@ -129,7 +130,7 @@ for i in range(64*32):
     p.write_data_expected[i] = i | 0xDEADBEEF00000000
     
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid):
-    r = os.system ("iverilog -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../sync_gray.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v")
+    r = os.system ("iverilog -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../sync_gray.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v")
     if r!=0:
         print "iverilog returned ", r
         exit(1)

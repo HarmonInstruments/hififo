@@ -35,7 +35,7 @@ module pcie_rx
    reg [31:0] 	     previous_dw = 0;
    reg 		     is_write_32 = 0;
    reg 		     is_cpld = 0;
-   reg 		     is_read_32_2dw = 0;
+   reg 		     is_read_32_1dw = 0;
    reg [23:0] 	     rid_tag = 0;
    reg [3:0] 	     rr_rc_lower_addr = 0;
    assign rr_rc_dw2 = {rid_tag, 1'b0, rr_rc_lower_addr, 3'd0};
@@ -54,14 +54,14 @@ module pcie_rx
 	       begin
 		  is_write_32 <= tdata_q[30:24] == 7'b1000000;
 		  is_cpld <= tdata_q[30:24] == 7'b1001010;
-		  is_read_32_2dw <= (tdata_q[30:24] == 7'b0000000) && (tdata_q[9:0] == 10'd2);
+		  is_read_32_1dw <= (tdata_q[30:24] == 7'b0000000) && (tdata_q[9:0] == 10'd1);
 		  if(tdata_q[30:24] == 7'b0000000)
 		    rid_tag <= tdata_q[63:40];
 	       end
 	     if(wait_dw23)
 	       begin
 		  address <= tdata_q[15:3];
-		  if(is_read_32_2dw)
+		  if(is_read_32_1dw)
 		    rr_rc_lower_addr <= tdata_q[6:3];
 	       end
 	     if(wait_dw01)
@@ -76,7 +76,7 @@ module pcie_rx
 	else if(tvalid_q && wait_dw23)
 	  {wait_dw45, wait_dw23, wait_dw01} <= 3'b100;
 	write_valid <= is_write_32 && wait_dw45 && tvalid_q;
-	read_valid <= is_read_32_2dw && wait_dw23 && tvalid_q;
+	read_valid <= is_read_32_1dw && wait_dw23 && tvalid_q;
 	completion_valid <= is_cpld && wait_dw45 && tvalid_q;
      end
 endmodule

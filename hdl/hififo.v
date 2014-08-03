@@ -25,11 +25,7 @@ module hififo_pcie
    output 	 fpc0_reset,
    output [63:0] fpc0_data,
    input 	 fpc0_read,
-   output 	 fpc0_valid,
-   // PIO
-   output 	 pio_write_valid,
-   output [63:0] pio_write_data,
-   output [12:0] pio_address
+   output 	 fpc0_valid
    );
   
    assign {tpc0_reset,fpc0_reset} = 2'b00;
@@ -47,34 +43,34 @@ module hififo_pcie
    wire [63:0] 	rx_data;
    wire [12:0] 	rx_address;
 
-   assign pio_write_data = rx_data;
-   assign pio_write_valid = rx_wr_valid;
-   assign pio_address = rx_address;
-   
    // read completion request to TX module
    wire [31:0] 	tx_rc_dw2;
-   reg [63:0] 	tx_rc_data;
+   reg [31:0] 	tx_rc_data;
    reg 		tx_rc_done = 0;
    
    wire 	tx_rr_valid;
    wire 	tx_rr_ready;
    wire [7:0] 	tx_rr_tag;
    wire [63:0] 	tx_rr_addr;
+
+   wire [3:0] 	rr_mux_valid;
+   wire [3:0] 	rr_mux_ready;
+   wire [63:0] 	rr_mux_addr0;
         
    wire 	tx_wr_valid;
    wire 	tx_wr_ready;
    wire [63:0] 	tx_wr_addr;
    wire [63:0] 	tx_wr_data;
   
-   reg [63:0] 	count = 0;
+   reg [31:0] 	count = 0;
    reg [1:0] 	reset_fifo_0 = 3;
    reg [1:0] 	reset_fifo = 3;
    
-   wire [63:0] 	fpc_status, tpc_status;
+   wire [31:0] 	fpc_status, tpc_status;
          
    always @ (posedge clock)
      begin
-	reset_fifo <= pci_reset ? 3'b11 : reset_fifo_0;
+	reset_fifo <= pci_reset ? 2'b11 : reset_fifo_0;
 	interrupt_prev <= interrupt;
 	interrupt_out <= (interrupt_mask & (interrupt ^ interrupt_prev)) != 0;
 	interrupt_status <= pci_reset | (rx_rr_valid && (rx_address == 0)) ? 1'b0 : interrupt_status | interrupt;
@@ -98,26 +94,27 @@ module hififo_pcie
       .interrupt(interrupt[3:2]),
       .status(fpc_status),
       // PIO
-      .pio_wvalid(rx_wr_valid),
+      .pio_wvalid(rx_wr_valid && (rx_address[12:4] == 0)),
       .pio_wdata(rx_data),
-      .pio_addr(rx_address),
+      .pio_addr(rx_address[3:0]),
       // read completion
       .rc_valid(rx_rc_valid),
       .rc_tag(rx_rc_tag),
       .rc_index(rx_rc_index),
       .rc_data(rx_data),
       // read request
-      .rr_valid(tx_rr_valid),
-      .rr_ready(tx_rr_ready),
-      .rr_tag(tx_rr_tag),
-      .rr_addr(tx_rr_addr),    
+      .rr_valid(rr_mux_valid[0]),
+      .rr_ready(rr_mux_ready[0]),
+      .rr_addr(rr_mux_addr0),    
       // FIFO
       .fifo_clock(fifo_clock),
       .fifo_read(fpc0_read),
       .fifo_read_data(fpc0_data),
       .fifo_read_valid(fpc0_valid)
       );
-      
+
+   assign 	rr_mux_valid[3:1] = 0;
+         
    hififo_tpc_fifo tpc0_fifo
      (.clock(clock),
       .reset(reset_fifo[1]),
@@ -138,7 +135,29 @@ module hififo_pcie
       .fifo_write(tpc0_write),
       .fifo_ready(tpc0_ready)
       );
-   
+  
+   fpc_rr_mux fpc_rr_mux
+     (
+      .clock(clock),
+      .reset(reset_fifo[0]),
+      // PIO
+      .pio_wvalid(rx_wr_valid),
+      .pio_wdata(rx_data),
+      .pio_addr(rx_address),
+      // read request in
+      .rr_valid(rr_mux_valid),
+      .rr_ready(rr_mux_ready),
+      .rr0_addr(rr_mux_addr0),
+      .rr1_addr(1'b0),
+      .rr2_addr(1'b0),
+      .rr3_addr(1'b0),
+      // rr request multiplexed
+      .rrm_valid(tx_rr_valid),
+      .rrm_addr(tx_rr_addr),
+      .rrm_tag(tx_rr_tag),
+      .rrm_ready(tx_rr_ready)
+     );   
+ 
    pcie_rx rx
      (.clock(clock),
       .reset(pci_reset),

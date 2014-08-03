@@ -3,11 +3,11 @@ module pcie_from_pc_fifo
    input 	    clock,
    input 	    reset,
    output reg [1:0] interrupt = 0,
-   output [63:0]    status,
+   output [31:0]    status,
    // PIO
    input 	    pio_wvalid,
    input [63:0]     pio_wdata,
-   input [12:0]     pio_addr, 
+   input [3:0] 	    pio_addr, 
    // read completion
    input 	    rc_valid,
    input [7:0] 	    rc_tag,
@@ -16,7 +16,6 @@ module pcie_from_pc_fifo
    // read request
    output 	    rr_valid,
    output [63:0]    rr_addr,
-   output [7:0]     rr_tag,
    input 	    rr_ready,
    // FIFO
    input 	    fifo_clock, // for all FIFO signals
@@ -25,8 +24,6 @@ module pcie_from_pc_fifo
    output 	    fifo_read_valid
    );
 
-   reg [42:0] 	    pt [31:0];
-   reg [42:0] 	    pt_q;
    reg [7:0] 	    block_filled = 0;
    reg [8:0] 	    p_read;
    reg [16:0] 	    p_write = 0; // 512 bytes
@@ -38,8 +35,7 @@ module pcie_from_pc_fifo
    wire 	    write_last = write && (rc_index == 6'h3F);
    wire [2:0] 	    prp2 = p_request[2:0] + 2'd2;
    assign rr_valid = ~rr_ready & (prp2 != p_read[8:6]) & (p_request != p_stop);
-   assign rr_addr = {pt_q, p_request[11:0], 9'd0};
-   assign rr_tag = p_request[2:0];
+   assign rr_addr = {p_request[16:0], 9'd0};
    assign status = {p_write, 9'd0};
    wire [63:0] 	    fifo_write_data;
    wire 	    fifo_ready;
@@ -55,9 +51,6 @@ module pcie_from_pc_fifo
    
    always @ (posedge clock)
      begin
-	pt_q <= pt[p_request[16:12]];
-	if(pio_wvalid && (pio_addr[12:5] == 2))
-	  pt[pio_addr[4:0]] <= pio_wdata[63:21];
 	p_stop <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 6) ? pio_wdata[25:9] : p_stop);
 	p_int <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 7) ? pio_wdata[25:9] : p_int);
 	p_read <= reset ? 1'b0 : p_read + ((p_read[8:6] != p_write[2:0]) && fifo_ready);
