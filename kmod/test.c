@@ -203,7 +203,7 @@ void checker(struct fifodev *f, uint64_t count)
 int main ( int argc, char **argv )
 {
   uint64_t length = 1048576L*1024L*10L;
-  struct fifodev *fifodev = fifo_open("/dev/hififo");
+  struct fifodev *fifodev = fifo_open("/dev/hififo0");
   if(fifodev == NULL)
     exit(EXIT_FAILURE);
   #pragma omp parallel sections

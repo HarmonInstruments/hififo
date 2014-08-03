@@ -30,10 +30,14 @@
 
 #define VENDOR_ID 0x10EE
 #define DEVICE_ID 0x7024
-#define SUCCESS 0
 #define DEVICE_NAME "hififo"
 
 #define HIFIFO_IOC_MAGIC 'f'
+#define IOC_INFO 0x10
+#define IOC_GET_TO_PC 0x11
+#define IOC_PUT_TO_PC 0x12
+#define IOC_GET_FROM_PC 0x13
+#define IOC_PUT_FROM_PC 0x14
 
 #define MAX_FIFOS 4
 
@@ -60,8 +64,6 @@ static struct pci_device_id hififo_pci_table[] = {
 #define REG_TO_PC_PAGE_TABLE_BASE 32
 #define REG_FROM_PC_PAGE_TABLE_BASE 128
 
-#define IOC_INFO 0x10
-
 static struct class *hififo_class;
 
 struct hififo_fifo1 {
@@ -86,6 +88,7 @@ struct hififo_dev {
   u64 *pio_reg_base;
   int is_open;
   int major;
+  int nfifos;
 };
 
 #define fifo_writereg(data, addr) (writeq(cpu_to_le64(data), &drvdata->pio_reg_base[addr]))
@@ -99,7 +102,7 @@ static int hififo_open(struct inode *inode, struct file *filp){
     return -EBUSY;
   drvdata->is_open++;
   try_module_get(THIS_MODULE); // increment the usage count
-  return SUCCESS;
+  return 0;
 }
 
 static int hififo_release(struct inode *inode, struct file *filp){
@@ -107,7 +110,7 @@ static int hififo_release(struct inode *inode, struct file *filp){
   drvdata->is_open--;
   module_put(THIS_MODULE); // decrement the usage count
   printk("hififo: close\n");
-  return SUCCESS;
+  return 0;
 }
 
 static u64 get_bytes_in_ring_to_pc(struct hififo_dev *drvdata){
@@ -190,18 +193,18 @@ static long hififo_ioctl (struct file *file, unsigned int command, unsigned long
       return -EFAULT;
     return 0;
     // get bytes available in to PC FIFO
-  case _IO(HIFIFO_IOC_MAGIC,0x11):
+  case _IO(HIFIFO_IOC_MAGIC, IOC_GET_TO_PC):
     return wait_bytes_in_ring_to_pc(drvdata, arg);
     // accept bytes from to PC FIFO
-  case _IO(HIFIFO_IOC_MAGIC,0x12):
+  case _IO(HIFIFO_IOC_MAGIC, IOC_PUT_TO_PC):
     drvdata->fifo[0].to_pc.pointer += arg;
     fifo_writereg(drvdata->fifo[0].to_pc.pointer + (BUFFER_SIZE_TO_PC - 128), REG_TO_PC_STOP);
     return 0;
     // get bytes available in from PC FIFO
-  case _IO(HIFIFO_IOC_MAGIC,0x13):
+  case _IO(HIFIFO_IOC_MAGIC, IOC_GET_FROM_PC):
     return wait_bytes_in_ring_from_pc(drvdata, arg);
     // commit bytes to from PC FIFO
-  case _IO(HIFIFO_IOC_MAGIC,0x14):
+  case _IO(HIFIFO_IOC_MAGIC, IOC_PUT_FROM_PC):
     drvdata->fifo[0].from_pc.pointer += arg;
     fifo_writereg(drvdata->fifo[0].from_pc.pointer, REG_FROM_PC_STOP);
     return 0;
@@ -275,10 +278,27 @@ static irqreturn_t hififo_interrupt(int irq, void *dev_id, struct pt_regs *regs)
   return IRQ_HANDLED;
 }
 
-static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
+static int hififo_alloc_buffer(struct pci_dev *pdev, struct hififo_fifo1 * fifo, int pages){
   int i, j;
+  for(i=0; i<pages; i++){
+    fifo->buffer[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &fifo->dma_addr[i]);
+    if(fifo->buffer[i] == NULL){
+      printk("Failed to allocate DMA buffer %d\n", i);
+      return -ENOMEM;
+    }
+    else{
+      for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
+	fifo->buffer[i][j] = 0;
+    }
+  }
+  return 0;
+}
+
+static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
+  int i;
   int retval;
   dev_t dev = 0;
+  char tmpstr[16];
   struct hififo_dev *drvdata;
 
   drvdata = devm_kzalloc(&pdev->dev, sizeof(struct hififo_dev), GFP_KERNEL);
@@ -323,59 +343,43 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   drvdata->pio_reg_base = (u64 *) pcim_iomap(pdev, 0, 65536);
   printk(KERN_INFO DEVICE_NAME ": pci_resource_start(dev, 0) = 0x%.8llx, virt = 0x%.16llx\n", (u64) pci_resource_start(pdev, 0), (u64) drvdata->pio_reg_base);
 
+  drvdata->nfifos = 1;
 
-  retval = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME);
+  retval = alloc_chrdev_region(&dev, 0, drvdata->nfifos, DEVICE_NAME);
   if (retval) {
     printk(KERN_ERR DEVICE_NAME ": alloc_chrdev_region() failed\n");
     return retval;
   }
-  
+
   drvdata->major = MAJOR(dev);
-  cdev_init(&drvdata->hififo_cdev, &fops);
+  cdev_init(&drvdata->hififo_cdev, &fops); // void
   drvdata->hififo_cdev.owner = THIS_MODULE;
   drvdata->hififo_cdev.ops = &fops;
-  retval = cdev_add (&drvdata->hififo_cdev, MKDEV(MAJOR(dev), 0), 1);
+
+  retval = cdev_add (&drvdata->hififo_cdev, MKDEV(MAJOR(dev), 0), drvdata->nfifos);
   if (retval){
     printk(KERN_NOTICE DEVICE_NAME ": Error %d adding cdev\n", retval);
     return retval;
-  }
-  device_create(hififo_class, NULL, MKDEV(MAJOR(dev), 0), NULL, "hififo");
-
-  drvdata->fifo[0].to_pc.enabled = 1;
-  drvdata->fifo[0].from_pc.enabled = 1;
-  drvdata->fifo[0].pio_reg_base = drvdata->pio_reg_base;
-
-  init_waitqueue_head(&drvdata->fifo[0].to_pc.queue);
-  init_waitqueue_head(&drvdata->fifo[0].from_pc.queue);
-
-  for(i=0; i<BUFFER_PAGES_FROM_PC; i++){
-    drvdata->fifo[0].from_pc.buffer[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->fifo[0].from_pc.dma_addr[i]);
-    //printk("allocated drvdata->fifo[0].from_pc.buffer[%d] at %16llx phys: %16llx\n", i, (u64) drvdata->fifo[0].from_pc.buffer[i], drvdata->fifo[0].from_pc.dma_addr[i]);
-    if(drvdata->fifo[0].from_pc.buffer[i] == NULL){
-      printk("Failed to allocate out buffer %d\n", i);
-      return -ENOMEM;
-    }
-    else{
-      for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
-	drvdata->fifo[0].from_pc.buffer[i][j] = j + i*512*1024;
-    }
+  }  
+  
+  for(i=0; i<drvdata->nfifos; i++){
+    sprintf(tmpstr, "hififo%d", i);
+    device_create(hififo_class, NULL, MKDEV(MAJOR(dev), 0), NULL, tmpstr);
+    drvdata->fifo[i].to_pc.enabled = 1;
+    drvdata->fifo[i].from_pc.enabled = 1;
+    drvdata->fifo[i].pio_reg_base = drvdata->pio_reg_base;
+    init_waitqueue_head(&drvdata->fifo[i].to_pc.queue);
+    init_waitqueue_head(&drvdata->fifo[i].from_pc.queue);
   }
 
-  for(i=0; i<BUFFER_PAGES_TO_PC; i++){
-    drvdata->fifo[0].to_pc.buffer[i] = pci_alloc_consistent(pdev, BUFFER_PAGE_SIZE, &drvdata->fifo[0].to_pc.dma_addr[i]);
-    //printk("allocated drvdata->fifo[0].to_pc.buffer[%d] at %llx phys: %llx\n", i, (u64) drvdata->fifo[0].to_pc.buffer[i], drvdata->fifo[0].to_pc.dma_addr[i]);
-    if(drvdata->fifo[0].to_pc.buffer[i] == NULL){
-      printk("Failed to allocate in buffer %d\n", i);
-      return -ENOMEM;
-    }
-    else{
-      for(j=0; j<BUFFER_PAGE_SIZE/8; j++)
-	drvdata->fifo[0].to_pc.buffer[i][j] = 0xDEADAAAA + ((u64) j << 32);
-    }
-  }
+  if(hififo_alloc_buffer(pdev, &drvdata->fifo[0].from_pc, BUFFER_PAGES_FROM_PC) != 0)
+    return -ENOMEM;
+
+  if(hififo_alloc_buffer(pdev, &drvdata->fifo[0].to_pc, BUFFER_PAGES_TO_PC) != 0)
+    return -ENOMEM;
 
   for(i=0; i<8; i++)
-    printk("bar0[%d] = %.8lx\n", i, (u32) fifo_readreg(i));
+    printk("bar0[%d] = %.8x\n", i, (u32) fifo_readreg(i));
 
   /* disable it */
   fifo_writereg(0xF, REG_RESET);
@@ -401,8 +405,11 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 
 static void hififo_remove(struct pci_dev *pdev){
   struct hififo_dev *drvdata = pci_get_drvdata(pdev);
+  int i;
   fifo_writereg(0xF, REG_RESET);
-  device_destroy(hififo_class, MKDEV(drvdata->major, 0));
+  for(i=0; i<drvdata->nfifos; i++)
+    device_destroy(hififo_class, MKDEV(drvdata->major, i));
+  unregister_chrdev_region (MKDEV(drvdata->major, 0), drvdata->nfifos);
 }
 
 static struct pci_driver hififo_driver = {
