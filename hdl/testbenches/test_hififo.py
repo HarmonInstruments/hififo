@@ -41,6 +41,7 @@ class PCIe_host():
         self.write_data = np.zeros(16*1048576, dtype = 'uint64')
         self.write_data_expected = np.zeros(16*1048576, dtype = 'uint64')
         self.complete_addr = 0
+        self.errors = 0
     def write(self, data, address):
         self.txqueue.put([0xbeef00ff40000002, 0])
         self.txqueue.put([address | (endianswap(data) << 32), 0])
@@ -99,19 +100,7 @@ class PCIe_host():
                     reqid_tag = 0xFFFFFF & (self.rxdata[0] >> 40) 
                     self.complete(address, reqid_tag)
                 elif tlptype == 0b1000000: # write
-                    print "{} bit write request at 0x{:016X}, {} dw, {} qw".format(bits, address, length, len(self.rxdata))
-                    if length & 0x01 != 0:
-                        print "ERROR: write request is an odd length"
-                        return
-                    if length/2 + 2 != len(self.rxdata):
-                        print "ERROR: write request length does not match ", len(self.rxdata)
-                    for i in range(length/2):
-                        if bits == 32:
-                            d = combine2dw(endianswap(self.rxdata[1+i] >> 32), endianswap(self.rxdata[2+i]))
-                        else:
-                            d = combine2dw(endianswap(self.rxdata[2+i]), endianswap(self.rxdata[2+i] >> 32))
-                        self.write_data[address/8 + i & 0xFFFFFF] = d
-                        print "d[{}] = 0x{:016X}".format(i, d)
+                    self.handle_write_tlp(bits, address, length, self.rxdata)
                 elif tlptype == 0b1001010: # read completion
                     data = endianswap(self.rxdata[1]>>32)
                     print "read completion, data = ", data
@@ -121,6 +110,24 @@ class PCIe_host():
                 self.rxdata = []
         t_tready.next = random.choice([0,1,1,1])
         return
+    def handle_read_tlp(self, 
+    def handle_write_tlp(self, bits, address, length, rxdata):
+        print "{} bit write request at 0x{:016X}, {} dw, {} qw".format(bits, address, length, len(rxdata))
+        if length & 0x01 != 0:
+            print "ERROR: write request is an odd length"
+            self.errors += 1
+            return
+        if length/2 + 2 != len(self.rxdata):
+            print "ERROR: write request length does not match ", len(rxdata)
+            self.errors += 1
+            return
+        for i in range(length/2):
+            if bits == 32:
+                d = combine2dw(endianswap(rxdata[1+i] >> 32), endianswap(rxdata[2+i]))
+            else:
+                d = combine2dw(endianswap(rxdata[2+i]), endianswap(rxdata[2+i] >> 32))
+                self.write_data[address/8 + i & 0xFFFFFF] = d
+                print "d[{}] = 0x{:016X}".format(i, d)
 
 def seq_wait(x):
     return 1<<60 | x
@@ -209,6 +216,7 @@ def test_hififo(n=None):
             b = p.write_data_expected[i]
             if a != b:
                 print hex(int(a)),hex(int(b)),i
+    print "Errors found:", p.errors
 
 if __name__=="__main__":
     test_hififo()
