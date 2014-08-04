@@ -132,9 +132,9 @@ p = PCIe_host()
 p.write(0xF, 0*8)
 # load page tables
 for i in range(32):
-    p.write(1024*1024*2*i | 0x1000000000, (32+i)*8)
+    p.write(1024*1024*2*i | 0x1000000000, (1024+i)*8)
 for i in range(128):
-    p.write(1024*1024*2*i | 0x1000000000, (128+i)*8)
+    p.write(1024*1024*2*i | 0x1000000000, (512+i)*8)
 # enable FIFOs
 p.write(0, 8*8)
 p.write(0x00040400, 3*8)
