@@ -79,8 +79,8 @@ module fwft_fifo
    assign o_valid = ~empty;
    FIFO_DUALCLOCK_MACRO  
      #(
-       .ALMOST_EMPTY_OFFSET(9'h010),
-       .ALMOST_FULL_OFFSET(9'h100),
+       .ALMOST_EMPTY_OFFSET(9'h00F),
+       .ALMOST_FULL_OFFSET(9'h080),
        .DATA_WIDTH(NBITS),
        .DEVICE("7SERIES"),
        .FIFO_SIZE ("36Kb"),
