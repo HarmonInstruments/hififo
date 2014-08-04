@@ -99,7 +99,12 @@ class PCIe_host():
                     reqid_tag = 0xFFFFFF & (self.rxdata[0] >> 40) 
                     self.complete(address, reqid_tag)
                 elif tlptype == 0b1000000: # write
-                    print "{} bit write request at 0x{:016X}, {} dw".format(bits, address, length)
+                    print "{} bit write request at 0x{:016X}, {} dw, {} qw".format(bits, address, length, len(self.rxdata))
+                    if length & 0x01 != 0:
+                        print "ERROR: write request is an odd length"
+                        return
+                    if length/2 + 2 != len(self.rxdata):
+                        print "ERROR: write request length does not match ", len(self.rxdata)
                     for i in range(length/2):
                         if bits == 32:
                             d = combine2dw(endianswap(self.rxdata[1+i] >> 32), endianswap(self.rxdata[2+i]))
