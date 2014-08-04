@@ -59,7 +59,7 @@ module hififo_pcie
    wire 	rx_rr_valid;
    wire 	rx_wr_valid;
    wire [63:0] 	rx_data;
-   wire [12:0] 	rx_address;
+   wire [10:0] 	rx_address;
 
    // read completion request to TX module
    wire [31:0] 	tx_rc_dw2;
@@ -114,7 +114,7 @@ module hififo_pcie
       .status(fpc_status),
       .fifo_number(2'd0),
       // PIO
-      .pio_wvalid(rx_wr_valid && (rx_address[12:4] == 0)),
+      .pio_wvalid(rx_wr_valid && (rx_address[10:4] == 0)),
       .pio_wdata(rx_data),
       .pio_addr(rx_address[3:0]),
       // read completion

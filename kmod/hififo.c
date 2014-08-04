@@ -62,8 +62,8 @@ static struct pci_device_id hififo_pci_table[] = {
 #define REG_FROM_PC_STOP 6
 #define REG_FROM_PC_MATCH 7
 #define REG_RESET 8
-#define REG_TO_PC_PAGE_TABLE_BASE 32
-#define REG_FROM_PC_PAGE_TABLE_BASE 128
+#define REG_FROM_PC_PAGE_TABLE_BASE 512
+#define REG_TO_PC_PAGE_TABLE_BASE 1024
 
 static struct class *hififo_class;
 
@@ -347,7 +347,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     return retval;
   }
 
-  drvdata->pio_reg_base = (u64 *) pcim_iomap(pdev, 0, 65536);
+  drvdata->pio_reg_base = (u64 *) pcim_iomap(pdev, 0, 16384);
   printk(KERN_INFO DEVICE_NAME ": pci_resource_start(dev, 0) = 0x%.8llx, virt = 0x%.16llx\n", (u64) pci_resource_start(pdev, 0), (u64) drvdata->pio_reg_base);
 
   drvdata->nfifos = 1;

@@ -29,7 +29,7 @@ module pcie_rx
    output reg [5:0]  completion_index = 0,
    output [7:0]      completion_tag,
    output reg [63:0] data = 0,
-   output reg [12:0] address = 0,
+   output [10:0]     address,
    output [31:0]     rr_rc_dw2,
    // AXI stream from PCIE core
    input 	     tvalid,
@@ -42,8 +42,10 @@ module pcie_rx
       es = {x[7:0], x[15:8], x[23:16], x[31:24]};
    endfunction   
 
-   assign completion_tag = address[12:5];
-      
+   reg [12:0] 	     address_q = 0;
+   assign completion_tag = address_q[12:5];
+   assign address = address_q[10:0];
+   
    reg 		     tvalid_q = 0;
    reg [63:0] 	     tdata_q = 0;
    reg 		     tlast_q = 0;
@@ -78,7 +80,7 @@ module pcie_rx
 	       end
 	     if(wait_dw23)
 	       begin
-		  address <= tdata_q[15:3];
+		  address_q <= tdata_q[15:3];
 		  if(is_read_32_1dw)
 		    rr_rc_lower_addr <= tdata_q[6:3];
 	       end

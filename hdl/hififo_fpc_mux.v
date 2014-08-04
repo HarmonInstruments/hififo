@@ -23,7 +23,7 @@ module fpc_rr_mux
    // PIO for page table writes
    input 	 pio_wvalid,
    input [63:0]  pio_wdata,
-   input [12:0]  pio_addr,
+   input [10:0]  pio_addr,
    // read request in
    input [3:0] 	 rr_valid,
    output [3:0]  rr_ready,
@@ -80,7 +80,7 @@ module fpc_rr_mux
    block_ram #(.DBITS(43), .ABITS(7)) bram_pt_fpc
      (.clock(clock),
       .w_data(pio_wdata[63:21]),
-      .w_valid(pio_wvalid && (pio_addr[12:7] == 1)),
+      .w_valid(pio_wvalid && (pio_addr[10:9] == 1)),
       .w_addr(pio_addr[6:0]),
       .r_data(rrm_addr[63:21]),
       .r_addr(pt_addr)

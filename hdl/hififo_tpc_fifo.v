@@ -25,7 +25,7 @@ module hififo_tpc_fifo
    // PIO
    input 	     pio_wvalid,
    input [63:0]      pio_wdata,
-   input [12:0]      pio_addr, 
+   input [10:0]      pio_addr, 
    // request
    output reg 	     wr_valid = 0,
    output [63:0]     wr_addr,
@@ -61,7 +61,7 @@ module hififo_tpc_fifo
 	p_out <= reset ? 1'b0 : p_out + wr_ready;
 	p_stop <= reset ? 1'b0 : ((pio_wvalid && (pio_addr == 3)) ? pio_wdata[26:7] : p_stop);
 	p_int  <= (pio_wvalid && (pio_addr == 4)) ? pio_wdata[26:7] : p_int;
-	if(pio_wvalid && (pio_addr[12:5] == 1))
+	if(pio_wvalid && (pio_addr[10:9] == 2))
 	  pt[pio_addr[4:0]] <= pio_wdata[63:21];
 	interrupt <= p_int == p_out[22:4];
      end
