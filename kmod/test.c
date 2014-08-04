@@ -188,7 +188,7 @@ void checker(struct fifodev *f, uint64_t count)
     rcount = min(f->read_size/2, count-i);
     uint64_t * d = fifo_read_get(f, rcount);
     if(d == NULL){
-      fprintf(stderr, "failed to read, count = %ld, avaliable = %ld\n", rcount, f->read_available);
+      fprintf(stderr, "failed to read, count = %ld, avaliable = %ld, progress = %ld\n", rcount, f->read_available, i);
       exit(EXIT_FAILURE);
     }
     for(int j=0; j<(rcount>>3); j++){
