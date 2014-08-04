@@ -47,8 +47,8 @@ static struct pci_device_id hififo_pci_table[] = {
   {0,}
 };
 
-#define BUFFER_PAGES_FROM_PC 1
-#define BUFFER_PAGES_TO_PC 1
+#define BUFFER_PAGES_FROM_PC 4
+#define BUFFER_PAGES_TO_PC 2
 #define BUFFER_MAX_PAGES 32
 #define BUFFER_PAGE_SIZE (2048*1024) // this is the size of a page in the card's page table
 #define BUFFER_SIZE_TO_PC (BUFFER_PAGE_SIZE*BUFFER_PAGES_TO_PC)
@@ -136,31 +136,30 @@ static u64 wait_bytes_in_ring_to_pc(struct hififo_fifo *fifo, u64 desired_bytes)
 }
 
 static u64 get_bytes_in_ring_from_pc(struct hififo_fifo *fifo){
-  u64 bytes_in_buffer = fifo_readreg(REG_FROM_PC_COUNT);
-  bytes_in_buffer = fifo_readreg(REG_FROM_PC_COUNT);
-  while((bytes_in_buffer & 0x03) != 0){
-    bytes_in_buffer = fifo_readreg(REG_FROM_PC_COUNT);
-    printk("retry: REG_FROM_PC_COUNT = %llx\n", bytes_in_buffer);
+  u64 bytes_available = fifo_readreg(REG_FROM_PC_COUNT);
+  while((bytes_available & 0x03) != 0){
+    bytes_available = fifo_readreg(REG_FROM_PC_COUNT);
+    printk("retry: REG_FROM_PC_COUNT = %llx\n", bytes_available);
   }
-  bytes_in_buffer = (fifo->from_pc.pointer - bytes_in_buffer);
-  bytes_in_buffer &= (BUFFER_SIZE_FROM_PC - 1);
-  bytes_in_buffer = (BUFFER_SIZE_FROM_PC - 1024) - bytes_in_buffer;
-  return bytes_in_buffer;
+  bytes_available = (fifo->from_pc.pointer - bytes_available);
+  bytes_available &= (BUFFER_SIZE_FROM_PC - 1);
+  bytes_available = (BUFFER_SIZE_FROM_PC - 1024) - bytes_available;
+  return bytes_available;
 }
 
 static u64 wait_bytes_in_ring_from_pc(struct hififo_fifo *fifo, u64 desired_bytes){
-  u64 bytes_in_buffer = get_bytes_in_ring_from_pc(fifo);
+  u64 bytes_available = get_bytes_in_ring_from_pc(fifo);
   int retval;
-  if(bytes_in_buffer >= desired_bytes)
-    return bytes_in_buffer;
+  if(bytes_available >= desired_bytes)
+    return bytes_available;
 
-  fifo_writereg(fifo->from_pc.pointer + desired_bytes, REG_FROM_PC_MATCH);
-  bytes_in_buffer = get_bytes_in_ring_from_pc(fifo);
-  if(bytes_in_buffer >= desired_bytes)
-    return bytes_in_buffer;
+  fifo_writereg((fifo->from_pc.pointer - (BUFFER_SIZE_FROM_PC - desired_bytes)), REG_FROM_PC_MATCH);
+  bytes_available = get_bytes_in_ring_from_pc(fifo);
+  if(bytes_available >= desired_bytes)
+    return bytes_available;
   retval = wait_event_interruptible_timeout(fifo->from_pc.queue, (get_bytes_in_ring_from_pc(fifo) >= desired_bytes), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
-  bytes_in_buffer = get_bytes_in_ring_from_pc(fifo);
-  return bytes_in_buffer;
+  bytes_available = get_bytes_in_ring_from_pc(fifo);
+  return bytes_available;
 }
 
 static ssize_t hififo_read(struct file *filp,
@@ -202,6 +201,7 @@ static long hififo_ioctl (struct file *file, unsigned int command, unsigned long
     // accept bytes from to PC FIFO
   case _IO(HIFIFO_IOC_MAGIC, IOC_PUT_TO_PC):
     fifo->to_pc.pointer += arg;
+    fifo_writereg(fifo->to_pc.pointer + (BUFFER_SIZE_TO_PC - 128), REG_TO_PC_MATCH);
     fifo_writereg(fifo->to_pc.pointer + (BUFFER_SIZE_TO_PC - 128), REG_TO_PC_STOP);
     return 0;
     // get bytes available in from PC FIFO
@@ -210,6 +210,7 @@ static long hififo_ioctl (struct file *file, unsigned int command, unsigned long
     // commit bytes to from PC FIFO
   case _IO(HIFIFO_IOC_MAGIC, IOC_PUT_FROM_PC):
     fifo->from_pc.pointer += arg;
+    fifo_writereg(fifo->from_pc.pointer, REG_FROM_PC_MATCH);
     fifo_writereg(fifo->from_pc.pointer, REG_FROM_PC_STOP);
     return 0;
   }

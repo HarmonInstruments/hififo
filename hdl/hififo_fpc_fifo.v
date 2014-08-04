@@ -20,8 +20,9 @@ module pcie_from_pc_fifo
   (
    input 	    clock,
    input 	    reset,
-   output reg [1:0] interrupt = 0,
+   output reg       interrupt = 0,
    output [31:0]    status,
+   input [1:0]      fifo_number,
    // PIO
    input 	    pio_wvalid,
    input [63:0]     pio_wdata,
@@ -48,7 +49,7 @@ module pcie_from_pc_fifo
    reg [16:0] 	    p_request = 0; // 512 byes
    reg [16:0] 	    p_stop = 0; // 512 bytes
    reg [16:0] 	    p_int = 0; // 512 bytes
-   wire 	    write = (rc_tag[7:3] == 0) && rc_valid;
+   wire 	    write = (rc_tag[7:3] == fifo_number) && rc_valid;
    wire [8:0] 	    write_address = {rc_tag[2:0],rc_index};
    wire 	    write_last = write && (rc_index == 6'h3F);
    wire [2:0] 	    prp2 = p_request[2:0] + 2'd2;
@@ -74,7 +75,7 @@ module pcie_from_pc_fifo
 	p_read <= reset ? 1'b0 : p_read + ((p_read[8:6] != p_write[2:0]) && fifo_ready);
 	p_write <= reset ? 1'b0 : p_write + block_filled[p_write[2:0]];
 	p_request <= reset ? 1'b0 : p_request + rr_ready;
-	interrupt <= {(p_stop == p_write), (p_int == p_write)};
+	interrupt <= p_int == p_write;
 	fifo_write_0 <= ((p_read[8:6] != p_write[2:0]) && fifo_ready);
 	fifo_write_1 <= fifo_write_0;
      end

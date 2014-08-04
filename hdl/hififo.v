@@ -103,12 +103,16 @@ module hififo_pcie
 	endcase
 	tx_rc_done <= rx_rr_valid;
      end
-   
+
+   assign interrupt[3] = 0;
+   assign interrupt[1] = 0;
+      
    pcie_from_pc_fifo fpc0_fifo
      (.clock(clock),
       .reset(reset_fifo[0]),
-      .interrupt(interrupt[3:2]),
+      .interrupt(interrupt[2]),
       .status(fpc_status),
+      .fifo_number(2'd0),
       // PIO
       .pio_wvalid(rx_wr_valid && (rx_address[12:4] == 0)),
       .pio_wdata(rx_data),
@@ -134,7 +138,7 @@ module hififo_pcie
    hififo_tpc_fifo tpc0_fifo
      (.clock(clock),
       .reset(reset_fifo[1]),
-      .interrupt(interrupt[1:0]),
+      .interrupt(interrupt[0]),
       .status(tpc_status),
       // PIO
       .pio_wvalid(rx_wr_valid),
