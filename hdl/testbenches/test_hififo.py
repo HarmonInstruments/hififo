@@ -110,7 +110,6 @@ class PCIe_host():
                 self.rxdata = []
         t_tready.next = random.choice([0,1,1,1])
         return
-    def handle_read_tlp(self, 
     def handle_write_tlp(self, bits, address, length, rxdata):
         print "{} bit write request at 0x{:016X}, {} dw, {} qw".format(bits, address, length, len(rxdata))
         if length & 0x01 != 0:
@@ -126,8 +125,8 @@ class PCIe_host():
                 d = combine2dw(endianswap(rxdata[1+i] >> 32), endianswap(rxdata[2+i]))
             else:
                 d = combine2dw(endianswap(rxdata[2+i]), endianswap(rxdata[2+i] >> 32))
-                self.write_data[address/8 + i & 0xFFFFFF] = d
-                print "d[{}] = 0x{:016X}".format(i, d)
+            self.write_data[address/8 + i & 0xFFFFFF] = d
+            print "d[{}] = 0x{:016X}".format(i, d)
 
 def seq_wait(x):
     return 1<<60 | x
@@ -137,17 +136,18 @@ def seq_put(x):
 p = PCIe_host()
 # enable interrupts
 p.write(0xF, 0*8)
-# load page tables
-for i in range(32):
-    p.write(1024*1024*2*i | 0x1000000000, (1024+i)*8)
-for i in range(128):
-    p.write(1024*1024*2*i | 0x1000000000, (512+i)*8)
 # enable FIFOs
 p.write(0, 8*8)
-p.write(0x00040400, 3*8)
-p.write(0x100, 4*8)
-p.write(0x00300000, 6*8)
-p.write(0x100, 7*8)
+p.write(0x100000800, 16*8)
+p.write(0x200000000, 17*8)
+p.write(0x300000200, 16*8)
+p.write(0x400000800, 17*8)
+p.write(0xF300010A00, 16*8)
+p.write(0xF400000A00, 17*8)
+p.write(0x500000200, 24*8)
+p.write(0x600000000, 25*8)
+p.write(0x700101200, 24*8)
+p.write(0x800000200, 25*8)
 p.read(0*8, 1)
 p.read(1*8, 1)
 p.read(5*8, 1)
@@ -161,7 +161,7 @@ for i in range(64*32):
     p.write_data_expected[i] = i | 0xDEADBEEF00000000
     
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid):
-    r = os.system ("iverilog -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v")
+    r = os.system ("iverilog -Wall -Winfloop -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v ../hififo_request.v")
     if r!=0:
         print "iverilog returned ", r
         exit(1)

@@ -18,72 +18,129 @@
 
 module fpc_rr_mux
   (
-   input 	 clock,
-   input 	 reset,
-   // PIO for page table writes
-   input 	 pio_wvalid,
-   input [63:0]  pio_wdata,
-   input [10:0]  pio_addr,
+   input 	     clock,
+   input 	     reset,
+   // from request unit
+   input [3:0] 	     r_valid,
+   input [60:0]      r_addr, // 8 bytes
+   input [18:0]      r_count, // 8 bytes
+   input 	     r_interrupt,
+   output [3:0]      r_ready,
    // read request in
-   input [3:0] 	 rr_valid,
-   output [3:0]  rr_ready,
-   input [63:0]  rr0_addr,
-   input [63:0]  rr1_addr,
-   input [63:0]  rr2_addr,
-   input [63:0]  rr3_addr,
+   input [3:0] 	     rr_valid,
+   output [3:0]      rr_ready,
+   input [2:0] 	     rr0_tag_low,
+   input [2:0] 	     rr1_tag_low,
+   input [2:0] 	     rr2_tag_low,
+   input [2:0] 	     rr3_tag_low,
    // rr request multiplexed
-   output 	 rrm_valid,
-   output [63:0] rrm_addr,
-   output [7:0]  rrm_tag,
-   input 	 rrm_ready
+   output  	     rrm_valid,
+   output reg [54:0] rrm_addr,
+   output [7:0]      rrm_tag,
+   input 	     rrm_ready
    );
 
-   reg [6:0] 	 pt_addr;
-   wire [42:0] 	 pt_data;
-   reg [3:0] 	 state;
-   reg [11:0] 	 rrm_la;
-   
-   assign rrm_addr[20:0] = {rrm_la, 9'd0};
-   assign rrm_valid = state[1:0] == 3;
-   assign rrm_tag[2:0] = rrm_la[2:0];
+   reg [3:0] 	     state;
+   reg [2:0] 	     tag_low;
+   assign rrm_tag[2:0] = tag_low;
    assign rrm_tag[7:3] = state[3:2];
-   assign rr_ready[0] = rrm_ready && (state == 3);
-   assign rr_ready[1] = rrm_ready && (state == 7);
-   assign rr_ready[2] = rrm_ready && (state == 11);
-   assign rr_ready[3] = rrm_ready && (state == 15);
-
+   assign rrm_valid = state[1:0] == 3;
+   
+   wire [3:0] 	     o_req_valid;
+   wire [3:0] 	     both_valid = o_req_valid & rr_valid;
+   wire [54:0] 	     rr_addr[0:3];
+   
+   genvar 	     i;
+   generate
+      for (i = 0; i < 4; i = i+1) begin: block_fill
+	 if(i>1) 
+	   begin
+	      assign r_ready[i] = 1'b0;
+	      assign o_req_valid[i] = 1'b0;
+	      assign rr_ready[i] = 1'b0;
+	      assign rr_addr[i] = 1'b0;
+	   end
+	 else
+	   begin
+	      assign r_ready[i] = ~o_req_valid[i];
+	      assign rr_ready[i] = o_req_valid[i] && (state == 2*i+1);
+	      
+	      request_count rcount
+		(.clock(clock),
+		 .reset(reset), 
+		 .i_valid(r_valid[i]),
+		 .i_addr(r_addr[60:6]),
+		 .i_count(r_count[18:6]), 
+		 .i_interrupt(r_interrupt), 
+		 .o_ready(state == 2 + 4*i),
+		 .o_valid(o_req_valid[i]),
+		 .o_addr(rr_addr[i]),
+		 .o_count(),
+		 .o_interrupt());
+	   end
+      end
+   endgenerate
+   
    always @ (posedge clock)
      begin
 	if(reset)
 	  state <= 1'b0;
 	else
 	  case(state[1:0])
-	    0: state <= rr_valid[state[3:2]] ? state + 1'b1 : state + 4'd4;
+	    0: state <= both_valid[state[3:2]] ? state + 1'b1 : state + 4'd4;
 	    1: state <= state + 1'b1;
 	    2: state <= state + 1'b1;
 	    3: state <= state + rrm_ready;
 	  endcase
 	case(state)
-	  0:  {pt_addr, rrm_la} <= {2'd0, rr0_addr[25:9]};
-	  4:  {pt_addr, rrm_la} <= {2'd1, rr1_addr[25:9]};
-	  8:  {pt_addr, rrm_la} <= {2'd2, rr2_addr[25:9]};
-	  12: {pt_addr, rrm_la} <= {2'd3, rr3_addr[25:9]};
+	  0:  tag_low <= rr0_tag_low;
+	  4:  tag_low <= rr1_tag_low;
+	  8:  tag_low <= rr2_tag_low;
+	  12: tag_low <= rr3_tag_low;
 	endcase
 	case(state)
-	  0:  {pt_addr, rrm_la} <= {2'd0, rr0_addr[25:9]};
-	  4:  {pt_addr, rrm_la} <= {2'd1, rr1_addr[25:9]};
-	  8:  {pt_addr, rrm_la} <= {2'd2, rr2_addr[25:9]};
-	  12: {pt_addr, rrm_la} <= {2'd3, rr3_addr[25:9]};
+	  0:  rrm_addr <= rr_addr[0];
+	  4:  rrm_addr <= rr_addr[1];
+	  8:  rrm_addr <= rr_addr[2];
+	  12: rrm_addr <= rr_addr[3];
 	endcase
    end
    
-   block_ram #(.DBITS(43), .ABITS(7)) bram_pt_fpc
-     (.clock(clock),
-      .w_data(pio_wdata[63:21]),
-      .w_valid(pio_wvalid && (pio_addr[10:9] == 1)),
-      .w_addr(pio_addr[6:0]),
-      .r_data(rrm_addr[63:21]),
-      .r_addr(pt_addr)
-      );
+endmodule
+
+module request_count
+  (
+   input 	     clock,
+   input 	     reset,
+   input 	     i_valid,
+   input [54:0]      i_addr,
+   input [12:0]      i_count,
+   input 	     i_interrupt,
+   input 	     o_ready,
+   output reg 	     o_valid,
+   output reg [54:0] o_addr,
+   output reg [11:0] o_count,
+   output reg 	     o_interrupt);
    
+   always @(posedge clock)
+     begin
+	if(reset)
+	  begin
+	     o_addr <= 1'b0;
+	     o_count <= 1'b0;
+	     o_interrupt <= 1'b0;
+	  end
+	else if(i_valid)
+	  begin
+	     o_addr <= i_addr;
+	     o_count <= i_count;
+	     o_interrupt <= i_interrupt;
+	  end
+	else if(o_ready)
+	  begin
+	     o_addr <= o_addr + 1'd1;
+	     o_count <= o_count - 1'b1;
+	  end
+	o_valid <= o_count != 0;
+     end
 endmodule

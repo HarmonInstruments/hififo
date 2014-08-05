@@ -23,11 +23,13 @@ module hififo_tpc_fifo
    input [15:0]      pci_id,
    output reg 	     interrupt = 0,
    output [31:0]     status,
-   // PIO
-   input 	     pio_wvalid,
-   input [63:0]      pio_wdata,
-   input [10:0]      pio_addr, 
-   // request
+   // from request unit
+   input 	     r_valid,
+   input [60:0]      r_addr, // 8 bytes
+   input [18:0]      r_count, // 8 bytes
+   input 	     r_interrupt,
+   output 	     r_ready,
+   // to PCI TX
    output reg 	     wr_valid = 0,
    input 	     wr_ready,
    output reg [65:0] wr_data,
@@ -44,30 +46,41 @@ module hififo_tpc_fifo
    endfunction
    
    // clock
-   reg [42:0] 	     pt [31:0];
-   reg [42:0] 	     pt_q;
-   reg [22:0] 	     p_out; // 8 bytes
-   reg [18:0] 	     p_stop; // 128 bytes
-   reg [18:0] 	     p_int = 0; // 128 bytes
+   reg [60:0] 	     addr; // 8 bytes
+   reg [19:0] 	     count; // 8 bytes
+   reg 		     interrupt_r;
+   
    wire 	     o_almost_empty;
+   wire 	     o_read = (wr_ready && wr_valid) || ((state != 0) && (state < 30));
    reg [63:0] 	     wr_data_next;
-   wire 	     wr_valid_set = (p_out[3:0] == 0) && ~o_almost_empty && (p_out[22:4] != p_stop);
+   wire 	     wr_valid_set = ~o_almost_empty && (count != 0);
    reg 		     is_32;
-   wire [63:0] 	     wr_addr = {pt_q, p_out[17:4], 7'd0};
+   wire [63:0] 	     wr_addr = {addr, 3'd0};
    wire [63:0] 	     o_data;
    reg [4:0] 	     state = 0;
    
-   assign status = {p_out[22:4], 7'd0};
-      
+   assign status = {count, 3'd0};
+   assign r_ready = count == 0;
+   
    always @ (posedge clock)
      begin
-	pt_q <= pt[p_out[22:18]];
-	p_out <= reset ? 1'b0 : p_out + ((state == 15) ? 5'd16 : 1'b0);
-	p_stop <= reset ? 1'b0 : ((pio_wvalid && (pio_addr == 3)) ? pio_wdata[26:7] : p_stop);
-	p_int  <= (pio_wvalid && (pio_addr == 4)) ? pio_wdata[26:7] : p_int;
-	if(pio_wvalid && (pio_addr[10:9] == 2))
-	  pt[pio_addr[4:0]] <= pio_wdata[63:21];
-	interrupt <= p_int == p_out[22:4];
+	if(reset)
+	  begin
+	     count <= 1'b0;
+	     interrupt_r <= 1'b0;
+	  end
+	else if(r_valid)
+	  begin
+	     addr <= r_addr;
+	     count <= r_count;
+	     interrupt_r <= r_interrupt & r_valid;
+	  end
+	else if(o_read)
+	  begin
+	     count <= count - 1'b1;
+	     addr <= addr + 1'b1;
+	  end
+	interrupt <= interrupt_r && (count == 0);
 	wr_valid <= reset ? 1'b0 : (((state == 0) || (state > 30)) && wr_valid_set);
 	if(reset)
 	  state <= 1'b0;
@@ -97,7 +110,7 @@ module hififo_tpc_fifo
       .i_valid(fifo_write),
       .i_ready(fifo_ready),
       .o_clock(clock),
-      .o_read((wr_ready && wr_valid) || ((state != 0) && (state < 30))),
+      .o_read(o_read),
       .o_data(o_data),
       .o_valid(),
       .o_almost_empty(o_almost_empty)
