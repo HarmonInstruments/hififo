@@ -102,14 +102,24 @@ class PCIe_host():
                 elif tlptype == 0b1000000: # write
                     self.handle_write_tlp(bits, address, length, self.rxdata)
                 elif tlptype == 0b1001010: # read completion
-                    data = endianswap(self.rxdata[1]>>32)
-                    print "read completion, data = ", data
-                    self.read_outstanding = 0
+                    self.handle_read_completion_tlp(bits, length, self.rxdata)
                 else:
                     print "unknown TLP ", hex(self.rxdata[0])
                 self.rxdata = []
         t_tready.next = random.choice([0,1,1,1])
         return
+    def handle_read_completion_tlp(self, bits, length, rxdata):
+        if length != 1:
+            print "ERROR: read completion TLP has incorrect length in header,", length
+            self.errors += 1
+        if len(self.rxdata) != 2:
+            print "ERROR: read completion TLP length does not match header,", len(self.rxdata)
+            self.errors += 1
+            return
+        data = endianswap(self.rxdata[1]>>32)
+        print "read completion, data = ", data
+        self.read_outstanding = 0
+
     def handle_write_tlp(self, bits, address, length, rxdata):
         print "{} bit write request at 0x{:016X}, {} dw, {} qw".format(bits, address, length, len(rxdata))
         if length & 0x01 != 0:
