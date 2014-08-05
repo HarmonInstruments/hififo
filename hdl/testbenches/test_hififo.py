@@ -56,7 +56,8 @@ class PCIe_host():
             self.txqueue.put([0xbeef00004A000000 | complete_size | ((512-complete_size*8*i) << 32), 0]) # 8 DW
             self.txqueue.put([combine2dw((reqid_tag << 8) | ((i & 1) << 6), endianswap(self.completion_data[self.complete_addr])), 0])
             for j in range(complete_size):
-                self.complete_addr += 1
+                if (reqid_tag & 0xF0) == 0:
+                    self.complete_addr += 1
                 self.txqueue.put([combine2dw(endianswap(int(self.completion_data[self.complete_addr-1])>>32), endianswap(self.completion_data[self.complete_addr])), j==(complete_size - 1)])
         
     def do_read(self, address):
@@ -155,6 +156,8 @@ p.write(0x100000800, 16*8)
 p.write(0x400000800, 17*8)
 p.write(0x100003200, 16*8)
 p.write(0xF400001000, 17*8)
+p.write(0x00000200, 18*8)
+p.write(0xF4BEEF0000, 19*8)
 # TPC
 p.write(0x100000200, 24*8)
 p.write(0x600000000, 25*8)

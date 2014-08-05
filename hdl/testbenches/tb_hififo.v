@@ -50,7 +50,7 @@ module tb_hififo_pcie;
       $to_myhdl(interrupt, t_tdata, t_1dw, t_tlast, t_tvalid);
    end
    
-   hififo_pcie #(.ENABLE(8'b00110011)) dut
+   hififo_pcie #(.ENABLE(8'b01110111)) dut
      (.pci_exp_txp(),
       .pci_exp_txn(),
       .pci_exp_rxp(4'b0),

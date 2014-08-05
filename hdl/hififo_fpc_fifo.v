@@ -60,7 +60,7 @@ module pcie_from_pc_fifo
    generate
       for (i = 0; i < 8; i = i+1) begin: block_fill
          always @(posedge clock)
-	   block_filled[i] <= reset ? 1'b0 : (write_last && (rc_tag[6:0] == i)) || ((p_write[2:0] == i) ? 1'b0 : block_filled[i]);
+	   block_filled[i] <= reset ? 1'b0 : (write_last && (rc_tag[3:0] == i)) || ((p_write[2:0] == i) ? 1'b0 : block_filled[i]);
       end
    endgenerate   
    
