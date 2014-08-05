@@ -16,11 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
+`timescale 1ns/1ps
+
 module pcie_from_pc_fifo
   (
    input 	 clock,
    input 	 reset,
-   output reg 	 interrupt = 0,
    output [31:0] status,
    input [1:0] 	 fifo_number,
    // read completion
@@ -45,7 +46,7 @@ module pcie_from_pc_fifo
    reg [2:0] 	 p_write = 0; // 512 bytes
    reg [2:0] 	 p_request = 0; // 512 byes
    reg [22:0] 	 byte_count;
-   wire 	 write = (rc_tag[6:4] == fifo_number) && rc_valid;
+   wire 	 write = (rc_tag[7:4] == fifo_number) && rc_valid;
    wire 	 write_last = write && (rc_index == 6'h3F);
    wire [2:0] 	 n_requested = p_request - p_write;
    assign rr_valid = (rr_holdoff == 0) && (rr_holdoff == 0) && (n_requested < 6);
@@ -70,7 +71,6 @@ module pcie_from_pc_fifo
 	p_read <= reset ? 1'b0 : p_read + ((p_read[8:6] != p_write[2:0]) && fifo_ready);
 	p_write <= reset ? 1'b0 : p_write + block_filled[p_write[2:0]];
 	p_request <= reset ? 1'b0 : p_request + rr_ready;
-	interrupt <= rc_tag[7] && (rc_valid) && (rc_index == 6'h3F);
 	fifo_write_0 <= ((p_read[8:6] != p_write[2:0]) && fifo_ready);
 	fifo_write_1 <= fifo_write_0;
      end

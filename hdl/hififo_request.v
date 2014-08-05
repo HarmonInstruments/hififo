@@ -16,6 +16,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
+`timescale 1ns/1ps
+
 module hififo_request
   (
    input 	 clock,
@@ -28,7 +30,6 @@ module hififo_request
    output [7:0]  r_valid,
    output [60:0] r_addr, // 8 bytes
    output [18:0] r_count, // 8 bytes
-   output 	 r_interrupt,
    input [7:0] 	 r_ready
    );
    parameter enables = 8'b00010001;
@@ -73,22 +74,22 @@ module hififo_request
       end
    endgenerate
    
-   reg [19:0] pio_high;
+   reg [18:0] pio_high;
    
    always @ (posedge clock)
      begin
 	state <= state + 1'b1;
         if(pio_wvalid & (pio_addr[10:4] == 1) & ~pio_addr[0])
-	  pio_high <= {pio_wdata[32], pio_wdata[21:3]};
+	  pio_high <= pio_wdata[21:3];
 	ram_addr <= addr_out[state];
      end
    
-   block_ram #(.DBITS(81), .ABITS(9)) bram_req
+   block_ram #(.DBITS(80), .ABITS(9)) bram_req
      (.clock(clock),
       .w_data({pio_high, pio_wdata[63:3]}),
       .w_valid(pio_wvalid && (pio_addr[10:4] == 1) && pio_addr[0]),
       .w_addr(addr_in[pio_addr[3:1]]),
-      .r_data({r_interrupt,r_count,r_addr}),
+      .r_data({r_count,r_addr}),
       .r_addr(ram_addr)
       );
    

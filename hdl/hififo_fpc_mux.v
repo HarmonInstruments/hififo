@@ -16,6 +16,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
+`timescale 1ns/1ps
+
 module fpc_rr_mux
   (
    input 	     clock,
@@ -24,7 +26,6 @@ module fpc_rr_mux
    input [3:0] 	     r_valid,
    input [60:0]      r_addr, // 8 bytes
    input [18:0]      r_count, // 8 bytes
-   input 	     r_interrupt,
    output [3:0]      r_ready,
    // read request in
    input [3:0] 	     rr_valid,
@@ -42,12 +43,10 @@ module fpc_rr_mux
 
    reg [3:0] 	     state;
    wire [3:0] 	     o_req_valid;
-   wire [3:0] 	     o_interrupt;
    wire [54:0] 	     rr_addr[0:3];
    wire [3:0] 	     both_valid;
-   reg 		     rrm_interrupt;
    reg [2:0] 	     rrm_tag_low;
-   assign rrm_tag = {rrm_interrupt, 1'b0, state[3:2], 1'b0, rrm_tag_low};
+   assign rrm_tag = {2'b0, state[3:2], 1'b0, rrm_tag_low};
    assign rrm_valid = state[1:0] == 3;
    
    genvar 	     i;
@@ -59,7 +58,6 @@ module fpc_rr_mux
 	      assign both_valid[i] = 1'b0;
 	      assign rr_ready[i] = 1'b0;
 	      assign rr_addr[i] = 1'b0;
-	      assign o_interrupt[i] = 1'b0;
 	   end
 	 else
 	   begin
@@ -73,12 +71,9 @@ module fpc_rr_mux
 		 .i_valid(r_valid[i]),
 		 .i_addr(r_addr[60:6]),
 		 .i_count(r_count[18:6]), 
-		 .i_interrupt(r_interrupt), 
 		 .o_ready(state == 2 + 4*i),
 		 .o_valid(req_valid),
-		 .o_addr(rr_addr[i]),
-		 .o_count(),
-		 .o_interrupt(o_interrupt[i]));
+		 .o_addr(rr_addr[i]));
 	   end
       end
    endgenerate
@@ -96,7 +91,6 @@ module fpc_rr_mux
 	  endcase
 	if(state[1:0] == 0)
 	  begin
-	     rrm_interrupt <= o_interrupt[state[3:2]];
 	     case(state[3:2])
 	       0: rrm_tag_low <= rr0_tag_low;
 	       1: rrm_tag_low <= rr1_tag_low;
@@ -106,7 +100,6 @@ module fpc_rr_mux
 	     rrm_addr <= rr_addr[state[3:2]];
 	  end
    end
-   
 endmodule
 
 module request_count
@@ -116,15 +109,12 @@ module request_count
    input 	     i_valid,
    input [54:0]      i_addr,
    input [12:0]      i_count,
-   input 	     i_interrupt,
    input 	     o_ready,
    output reg 	     o_valid,
-   output reg [54:0] o_addr,
-   output reg [11:0] o_count,
-   output reg 	     o_interrupt);
+   output reg [54:0] o_addr);
 
-   reg 		     enable_interrupt = 0;
-   
+   reg [12:0] 	     o_count;
+      
    always @(posedge clock)
      begin
 	if(reset)
@@ -136,7 +126,6 @@ module request_count
 	  begin
 	     o_addr <= i_addr;
 	     o_count <= i_count;
-	     enable_interrupt <= i_interrupt;
 	  end
 	else if(o_ready)
 	  begin
@@ -144,6 +133,5 @@ module request_count
 	     o_count <= o_count - 1'b1;
 	  end
 	o_valid <= o_count != 0;
-	o_interrupt <= (o_count == 1) && enable_interrupt;
      end
 endmodule

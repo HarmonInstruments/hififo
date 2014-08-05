@@ -29,6 +29,9 @@ module pcie_core_wrap
    //
    output [15:0] pci_id,
    input 	 interrupt,
+   output 	 interrupt_rdy,
+   input [3:0] 	 interrupt_num,
+   output [2:0]  interrupts_enabled,
    output reg 	 pci_reset = 1,
    output 	 clock,
    // AXI to core
@@ -49,18 +52,11 @@ module pcie_core_wrap
    wire 	sys_rst_n_c;
    wire 	sys_clk;
    reg 		cfg_turnoff_ok = 0;
-   wire 	cfg_interrupt_rdy;
-   reg 		cfg_interrupt = 0;
-   
    always @(posedge clock) 
      begin
 	pci_reset <= user_reset | ~user_lnk_up;
 	// fix this
    	cfg_turnoff_ok <= cfg_to_turnoff; // not if a completion is pending
-	if((interrupt) != 0)
-	  cfg_interrupt <= 1'b1;
-	else if(cfg_interrupt_rdy)
-	   cfg_interrupt <= 1'b0;
      end
          
    IBUF   pci_reset_ibuf (.O(sys_rst_n_c), .I(sys_rst_n));
@@ -168,12 +164,12 @@ module pcie_core_wrap
       .cfg_err_aer_headerlog(128'h0), .cfg_aer_interrupt_msgnum(5'h0),
       .cfg_err_aer_headerlog_set(), .cfg_aer_ecrc_check_en(), .cfg_aer_ecrc_gen_en(),
       
-      .cfg_interrupt(cfg_interrupt),
-      .cfg_interrupt_rdy(cfg_interrupt_rdy),
+      .cfg_interrupt(interrupt),
+      .cfg_interrupt_rdy(interrupt_rdy),
       .cfg_interrupt_assert(1'b0),
-      .cfg_interrupt_di(8'h0),
+      .cfg_interrupt_di({4'h0, interrupt_num}),
       .cfg_interrupt_do(),
-      .cfg_interrupt_mmenable(),
+      .cfg_interrupt_mmenable(interrupts_enabled),
       .cfg_interrupt_msienable(),
       .cfg_interrupt_msixenable(),
       .cfg_interrupt_msixfm(),

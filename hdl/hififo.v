@@ -16,40 +16,44 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
+`timescale 1ns/1ps
+
 module hififo_pcie
   (
+   // IO pins
+   output [3:0]  pci_exp_txp,
+   output [3:0]  pci_exp_txn,
+   input [3:0] 	 pci_exp_rxp,
+   input [3:0] 	 pci_exp_rxn,
+   input 	 sys_clk_p,
+   input 	 sys_clk_n,
+   input 	 sys_rst_n,
    // from core
-   input 	 clock,
-   input 	 pci_reset,
-   input [15:0]  pci_id,
-   // to core
-   output reg 	 interrupt_out,
-   // AXI to core
-   input 	 s_axis_tx_tready,
-   output [63:0] s_axis_tx_tdata,
-   output 	 s_axis_tx_1dw,
-   output 	 s_axis_tx_tlast,
-   output 	 s_axis_tx_tvalid,
-   // AXI from core
-   input 	 m_axis_rx_tvalid,
-   input 	 m_axis_rx_tlast,
-   input [63:0]  m_axis_rx_tdata, 
+   output 	 clock,
    // FIFOs
-   input 	 fifo_clock,
-   output 	 tpc0_reset,
+   input [7:0] 	 fifo_clock,
+   output [7:0]  fifo_reset,
    input [63:0]  tpc0_data,
    input 	 tpc0_write,
    output 	 tpc0_ready,
-   output 	 fpc0_reset,
    output [63:0] fpc0_data,
    input 	 fpc0_read,
    output 	 fpc0_valid
    );
-  
-   assign {tpc0_reset,fpc0_reset} = 2'b00;
-   wire [1:0] 	 interrupt;
-   reg [1:0] 	 interrupt_status = 0;
    
+   parameter ENABLE = 8'b00010001;
+   
+   assign fifo_reset = 8'd0;
+   
+   // interrupts
+   wire 	 interrupt;
+   wire 	 interrupt_rdy;
+   wire [3:0] 	 interrupt_num;
+   wire [2:0] 	 interrupts_enabled;
+   
+   wire [15:0] 	 pci_id;
+   wire 	 pci_reset;
+      
    // from RX module
    wire 	rx_rc_valid;
    wire [5:0] 	rx_rc_index;
@@ -80,36 +84,33 @@ module hififo_pcie
    wire [7:0] 	r_valid;
    wire [60:0] 	r_addr;
    wire [18:0] 	r_count;
-   wire 	r_interrupt;
    wire [7:0] 	r_ready;
    
    reg [1:0] 	reset_fifo_0 = 3;
    reg [1:0] 	reset_fifo = 3;
    
-   wire [31:0] 	fpc_status, tpc_status;
+   wire [31:0] 	status[0:7];
          
    always @ (posedge clock)
      begin
 	reset_fifo <= pci_reset ? 2'b11 : reset_fifo_0;
-	interrupt_out <= interrupt != 0;
-	interrupt_status <= pci_reset | (rx_rr_valid && (rx_address == 0)) ? 1'b0 : interrupt_status | interrupt;
 	case({~rx_wr_valid, rx_address})
 	  8: reset_fifo_0 <= rx_data[1:0];
-	endcase	
-	case({~rx_rr_valid, rx_address})
-	  0: tx_rc_data <= interrupt_status;
-	  1: tx_rc_data <= 32'h0101;
-	  2: tx_rc_data <= tpc_status;
-	  5: tx_rc_data <= fpc_status;
 	endcase
+	if(rx_rr_valid)
+	  case(rx_address)
+	    0:  tx_rc_data <= 1'b0;
+	    1:  tx_rc_data <= 32'h0101;
+	    32: tx_rc_data <= status[0];
+	    48: tx_rc_data <= status[4];
+	  endcase
 	tx_rc_done <= rx_rr_valid;
      end
       
    pcie_from_pc_fifo fpc0_fifo
      (.clock(clock),
       .reset(reset_fifo[0]),
-      .interrupt(interrupt[1]),
-      .status(fpc_status),
+      .status(status[0]),
       .fifo_number(2'd0),
       // read completion
       .rc_valid(rx_rc_valid),
@@ -121,7 +122,7 @@ module hififo_pcie
       .rr_ready(rr_mux_ready[0]),
       .rr_tag_low(rr_tag_low0),    
       // FIFO
-      .fifo_clock(fifo_clock),
+      .fifo_clock(fifo_clock[0]),
       .fifo_read(fpc0_read),
       .fifo_read_data(fpc0_data),
       .fifo_read_valid(fpc0_valid)
@@ -133,20 +134,18 @@ module hififo_pcie
      (.clock(clock),
       .reset(reset_fifo[1]),
       .pci_id(pci_id),
-      .interrupt(interrupt[0]),
-      .status(tpc_status),
+      .status(status[4]),
       // request unit
       .r_valid(r_valid[4]),
       .r_addr(r_addr),
       .r_count(r_count),
-      .r_interrupt(r_interrupt),
       .r_ready(r_ready[4]),
       // write request to TX
       .wr_valid(tx_wr_valid),
       .wr_ready(tx_wr_ready),
       .wr_data(tx_wr_data0),
       // user FIFO
-      .fifo_clock(fifo_clock),
+      .fifo_clock(fifo_clock[4]),
       .fifo_data(tpc0_data),
       .fifo_write(tpc0_write),
       .fifo_ready(tpc0_ready)
@@ -166,7 +165,6 @@ module hififo_pcie
       .r_valid(r_valid),
       .r_addr(r_addr),
       .r_count(r_count),
-      .r_interrupt(r_interrupt),
       .r_ready(r_ready)
      );
    
@@ -178,7 +176,6 @@ module hififo_pcie
       .r_valid(r_valid[3:0]),
       .r_addr(r_addr),
       .r_count(r_count),
-      .r_interrupt(r_interrupt),
       .r_ready(r_ready[3:0]),
       // read request in
       .rr_valid(rr_mux_valid),
@@ -193,7 +190,18 @@ module hififo_pcie
       .rrm_tag(tx_rr_tag),
       .rrm_ready(tx_rr_ready)
      );
- 
+
+   // AXI to core
+   wire 	 s_axis_tx_tready;
+   wire [63:0] 	 s_axis_tx_tdata;
+   wire 	 s_axis_tx_1dw;
+   wire 	 s_axis_tx_tlast;
+   wire 	 s_axis_tx_tvalid;
+   // AXI from core
+   wire 	 m_axis_rx_tvalid;
+   wire 	 m_axis_rx_tlast;
+   wire [63:0] 	 m_axis_rx_tdata;
+   
    pcie_rx rx
      (.clock(clock),
       .reset(pci_reset),
@@ -236,5 +244,31 @@ module hififo_pcie
       .tx_tlast(s_axis_tx_tlast),
       .tx_tvalid(s_axis_tx_tvalid)
    );
+
+   pcie_core_wrap pcie_core_wrap
+     (.pci_exp_txp(pci_exp_txp),
+      .pci_exp_txn(pci_exp_txn),
+      .pci_exp_rxp(pci_exp_rxp),
+      .pci_exp_rxn(pci_exp_rxn),
+      .sys_clk_p(sys_clk_p),
+      .sys_clk_n(sys_clk_n),
+      .sys_rst_n(sys_rst_n),
+      .clock(clock),
+      .pci_id(pci_id),
+      .interrupt(interrupt),
+      .interrupt_num(interrupt_num),
+      .interrupt_rdy(interrupt_rdy),
+      .interrupts_enabled(interrupts_enabled),
+      .pci_reset(pci_reset),
+      .s_axis_tx_tready(s_axis_tx_tready),
+      .s_axis_tx_tdata(s_axis_tx_tdata),
+      .s_axis_tx_1dw(s_axis_tx_1dw),
+      .s_axis_tx_tlast(s_axis_tx_tlast),
+      .s_axis_tx_tvalid(s_axis_tx_tvalid),
+      .m_axis_rx_tvalid(m_axis_rx_tvalid),
+      .m_axis_rx_tlast(m_axis_rx_tlast),
+      .m_axis_rx_tdata(m_axis_rx_tdata)
+      );
+   
 endmodule
 

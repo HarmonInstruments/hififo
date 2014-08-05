@@ -16,10 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
+`timescale 1ns/1ps
+
 module tb_hififo_pcie;
    reg clock = 0;
    reg reset = 1;
-   wire interrupt;
+   wire interrupt = 0;
    
    // AXI
    reg 	t_tready;
@@ -46,31 +48,38 @@ module tb_hififo_pcie;
       $to_myhdl(interrupt, t_tdata, t_1dw, t_tlast, t_tvalid);
    end
    
-   hififo_pcie dut
-     (.clock(clock),
-      .pci_reset(reset),
-      .pci_id(16'hDEAD),
-      .interrupt_out(interrupt),
-      .s_axis_tx_tready(t_tready),
-      .s_axis_tx_tdata(t_tdata),
-      .s_axis_tx_1dw(t_1dw),
-      .s_axis_tx_tlast(t_tlast),
-      .s_axis_tx_tvalid(t_tvalid),
-      // AXI from core
-      .m_axis_rx_tvalid(r_tvalid),
-      .m_axis_rx_tlast(r_tlast),
-      .m_axis_rx_tdata(r_tdata),
+   hififo_pcie #(.ENABLE(8'b00010001)) dut
+     (.pci_exp_txp(),
+      .pci_exp_txn(),
+      .pci_exp_rxp(4'b0),
+      .pci_exp_rxn(4'b0),
+      .sys_clk_p(1'b0),
+      .sys_clk_n(1'b0),
+      .sys_rst_n(1'b1),
+      .clock(),
+      //.pci_reset(),
       // FIFOs
-      .fifo_clock(clock),
-      .tpc0_reset(),
+      .fifo_clock({8{clock}}),
+      .fifo_reset(),
       .tpc0_data(tpc0_data),
       .tpc0_write(tpc0_write),
       .tpc0_ready(tpc0_ready),
-      .fpc0_reset(),
       .fpc0_data(fpc0_data),
       .fpc0_read(fpc0_read),
       .fpc0_valid(fpc0_valid)
       );
+
+   assign dut.pcie_core_wrap.s_axis_tx_tready = t_tready;
+   assign t_tdata = dut.pcie_core_wrap.s_axis_tx_tdata;
+   assign t_tlast = dut.pcie_core_wrap.s_axis_tx_tlast;
+   assign t_tvalid = dut.pcie_core_wrap.s_axis_tx_tvalid;
+
+   assign dut.pcie_core_wrap.m_axis_rx_tvalid = r_tvalid;
+   assign dut.pcie_core_wrap.m_axis_rx_tlast = r_tlast;
+   assign dut.pcie_core_wrap.m_axis_rx_tdata = r_tdata;
+   
+   assign dut.pcie_core_wrap.clock = clock;
+   assign dut.pcie_core_wrap.pci_reset = reset;
 
    sequencer sequencer
      (.clock(clock),
@@ -82,4 +91,38 @@ module tb_hififo_pcie;
       .tpc_write(tpc0_write),
       .tpc_data(tpc0_data));
       
+endmodule
+
+module pcie_core_wrap
+  (
+   // IO pins
+   output [3:0]  pci_exp_txp,
+   output [3:0]  pci_exp_txn,
+   input [3:0] 	 pci_exp_rxp,
+   input [3:0] 	 pci_exp_rxn,
+   input 	 sys_clk_p,
+   input 	 sys_clk_n,
+   input 	 sys_rst_n,
+        //
+   output [15:0] pci_id,
+   input 	 interrupt,
+   output 	 interrupt_rdy,
+   input [3:0] 	 interrupt_num,
+   output [2:0]  interrupts_enabled,
+   output 	 pci_reset,
+   output 	 clock,
+        // AXI to core
+   output 	 s_axis_tx_tready,
+   input [63:0]  s_axis_tx_tdata,
+   input 	 s_axis_tx_1dw,
+   input 	 s_axis_tx_tlast,
+   input 	 s_axis_tx_tvalid,
+        // AXI from core
+   output 	 m_axis_rx_tvalid,
+   output 	 m_axis_rx_tlast,
+   output [63:0] m_axis_rx_tdata
+   );
+   
+   assign pci_id = 16'hDEAD;
+   
 endmodule

@@ -165,7 +165,7 @@ for i in range(64*32):
     p.write_data_expected[i] = i | 0xDEADBEEF00000000
     
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid):
-    r = os.system ("iverilog -Wall -Winfloop -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v ../hififo_request.v")
+    r = os.system ("iverilog -Wall -Winfloop -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v ../hififo_request.v ../hififo_interrupt.v")
     if r!=0:
         print "iverilog returned ", r
         exit(1)

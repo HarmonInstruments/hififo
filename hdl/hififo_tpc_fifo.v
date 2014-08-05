@@ -16,18 +16,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
+`timescale 1ns/1ps
+
 module hififo_tpc_fifo
   (
    input 	     clock,
    input 	     reset,
    input [15:0]      pci_id,
-   output reg 	     interrupt = 0,
    output [31:0]     status,
    // from request unit
    input 	     r_valid,
    input [60:0]      r_addr, // 8 bytes
    input [18:0]      r_count, // 8 bytes
-   input 	     r_interrupt,
    output 	     r_ready,
    // to PCI TX
    output reg 	     wr_valid = 0,
@@ -44,11 +44,10 @@ module hififo_tpc_fifo
       input [31:0]   x;
       es = {x[7:0], x[15:8], x[23:16], x[31:24]};
    endfunction
-   
+
    // clock
    reg [60:0] 	     addr; // 8 bytes
    reg [19:0] 	     count; // 8 bytes
-   reg 		     r_interrupt_q;
    wire 	     o_almost_empty;
    wire 	     o_read = (wr_ready && wr_valid) || ((state != 0) && (state < 30));
    reg [63:0] 	     wr_data_next;
@@ -67,10 +66,6 @@ module hififo_tpc_fifo
      begin
 	byte_count <= reset ? 1'b0 : byte_count + o_read;
 	if(reset)
-	  r_interrupt_q <= 1'b0;
-	else if(r_valid)
-	  r_interrupt_q <= r_interrupt;
-	if(reset)
 	  count <= 1'b0;
 	else if(r_valid)
 	  count <= r_count;
@@ -80,7 +75,6 @@ module hififo_tpc_fifo
 	  addr <= r_addr;
 	else if(o_read)
 	  addr <= addr + 1'b1;
-	interrupt <= r_interrupt_q && (count == 1) && o_read;
 	wr_valid <= reset ? 1'b0 : (((state == 0) || (state > 30)) && wr_valid_set);
 	if(reset)
 	  state <= 1'b0;
@@ -115,5 +109,5 @@ module hififo_tpc_fifo
       .o_valid(),
       .o_almost_empty(o_almost_empty)
       );
-   
+     
 endmodule
