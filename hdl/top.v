@@ -32,13 +32,15 @@ module vna_dsp
    
    reg [63:0] 	    tpc_data = 0;
    reg 		    tpc_write = 0;
-   wire 	    tpc_ready;
-   
+      
    wire [63:0] 	    fpc_data;
    reg 		    fpc_read = 1'b0;
-   wire 	    fpc_valid;
    
-   hififo_pcie #(.ENABLE(8'b00010001)) hififo
+   wire [7:0] 	    fifo_ready;
+   wire 	    fpc_valid = fifo_ready[0];
+   wire 	    tpc_ready = fifo_ready[4];
+   
+   hififo_pcie #(.ENABLE(8'b11111111)) hififo
      (.pci_exp_txp(pcie_txp),
       .pci_exp_txn(pcie_txn),
       .pci_exp_rxp(pcie_rxp),
@@ -49,12 +51,16 @@ module vna_dsp
       .clock(clock),
       .fifo_clock({8{clock}}),
       .fifo_reset(),
-      .tpc0_data(tpc_data),
-      .tpc0_write(tpc_write),
-      .tpc0_ready(tpc_ready),
-      .fpc0_data(fpc_data),
-      .fpc0_read(fpc_read),
-      .fpc0_valid(fpc_valid)
+      .fifo_ready(fifo_ready),
+      .fifo_rw({3'b000, tpc_write, 3'b000, fpc_read}),
+      .fifo_data_0(fpc_data),
+      .fifo_data_1(),
+      .fifo_data_2(),
+      .fifo_data_3(),
+      .fifo_data_4(tpc_data),
+      .fifo_data_5(64'h0),
+      .fifo_data_6(64'h0),
+      .fifo_data_7(64'h0)      
       );
    
    always @ (posedge clock)

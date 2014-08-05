@@ -17,8 +17,8 @@
 set_property PULLUP true [get_ports pcie_rst_n]
 set_property IOSTANDARD LVCMOS18 [get_ports pcie_rst_n]
 set_property PACKAGE_PIN B11 [get_ports pcie_rst_n]
-set_property LOC IBUFDS_GTE2_X0Y1 [get_cells pcie_core_wrap/refclk_ibuf]
-create_clock -period 10.000 -name sys_clk [get_pins pcie_core_wrap/refclk_ibuf/O]
+set_property LOC IBUFDS_GTE2_X0Y1 [get_cells hififo/pcie_core_wrap/refclk_ibuf]
+create_clock -period 10.000 -name sys_clk [get_pins hififo/pcie_core_wrap/refclk_ibuf/O]
 set_false_path -from [get_ports pcie_rst_n]
 
 set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]

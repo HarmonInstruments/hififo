@@ -33,22 +33,24 @@ module tb_hififo_pcie;
    reg 	       r_tlast;
    reg [63:0]  r_tdata;
 
+   wire [7:0]  fifo_ready;
+   
    wire [63:0] tpc0_data;
    wire	       tpc0_write;
-   wire        tpc0_ready;
+   wire        tpc0_ready = fifo_ready[4];
 
    wire [63:0] fpc0_data;
    wire	       fpc0_read;
-   wire        fpc0_valid;
+   wire        fpc0_valid = fifo_ready[0];
      
    initial begin
       $dumpfile("dump.vcd");
-      $dumpvars(0, dut, sequencer);
+      $dumpvars(0);
       $from_myhdl(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata);
       $to_myhdl(interrupt, t_tdata, t_1dw, t_tlast, t_tvalid);
    end
    
-   hififo_pcie #(.ENABLE(8'b00010001)) dut
+   hififo_pcie #(.ENABLE(8'b00110011)) dut
      (.pci_exp_txp(),
       .pci_exp_txn(),
       .pci_exp_rxp(4'b0),
@@ -61,18 +63,23 @@ module tb_hififo_pcie;
       // FIFOs
       .fifo_clock({8{clock}}),
       .fifo_reset(),
-      .tpc0_data(tpc0_data),
-      .tpc0_write(tpc0_write),
-      .tpc0_ready(tpc0_ready),
-      .fpc0_data(fpc0_data),
-      .fpc0_read(fpc0_read),
-      .fpc0_valid(fpc0_valid)
+      .fifo_rw({3'b000, tpc0_write, 3'b000, fpc0_read}),
+      .fifo_ready(fifo_ready),
+      .fifo_data_0(fpc0_data),
+      .fifo_data_1(),
+      .fifo_data_2(),
+      .fifo_data_3(),
+      .fifo_data_4(tpc0_data),
+      .fifo_data_5(64'h0),
+      .fifo_data_6(64'h0),
+      .fifo_data_7(64'h0)
       );
 
    assign dut.pcie_core_wrap.s_axis_tx_tready = t_tready;
    assign t_tdata = dut.pcie_core_wrap.s_axis_tx_tdata;
    assign t_tlast = dut.pcie_core_wrap.s_axis_tx_tlast;
    assign t_tvalid = dut.pcie_core_wrap.s_axis_tx_tvalid;
+   assign t_1dw = dut.pcie_core_wrap.s_axis_tx_1dw;
 
    assign dut.pcie_core_wrap.m_axis_rx_tvalid = r_tvalid;
    assign dut.pcie_core_wrap.m_axis_rx_tlast = r_tlast;

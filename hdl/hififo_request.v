@@ -32,7 +32,7 @@ module hififo_request
    output [18:0] r_count, // 8 bytes
    input [7:0] 	 r_ready
    );
-   parameter enables = 8'b00010001;
+   parameter ENABLE = 8'b00010001;
    
    reg [81:0] 	 req_ram[0:511];
    reg [8:0] 	 ram_addr;
@@ -44,7 +44,7 @@ module hififo_request
    genvar 	 i;
    generate
       for (i = 0; i < 8; i = i+1) begin: block_fill
-	 if((2**i & enables) != 0)
+	 if((2**i & ENABLE) != 0)
 	   begin
 	      reg [5:0] p_in;
 	      reg [5:0] p_out;

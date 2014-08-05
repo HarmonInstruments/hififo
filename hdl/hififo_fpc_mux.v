@@ -20,27 +20,27 @@
 
 module fpc_rr_mux
   (
-   input 	     clock,
-   input 	     reset,
+   input 		       clock,
+   input 		       reset,
    // from request unit
-   input [3:0] 	     r_valid,
-   input [60:0]      r_addr, // 8 bytes
-   input [18:0]      r_count, // 8 bytes
-   output [3:0]      r_ready,
+   input [3:0] 		       r_valid,
+   input [60:0] 	       r_addr, // 8 bytes
+   input [18:0] 	       r_count, // 8 bytes
+   output [3:0] 	       r_ready,
    // read request in
-   input [3:0] 	     rr_valid,
-   output [3:0]      rr_ready,
-   input [2:0] 	     rr0_tag_low,
-   input [2:0] 	     rr1_tag_low,
-   input [2:0] 	     rr2_tag_low,
-   input [2:0] 	     rr3_tag_low,
+   input [3:0] 		       rr_valid,
+   output [3:0] 	       rr_ready,
+   input [4*NBITS_TAG_LOW-1:0] rr_tag_low,
    // rr request multiplexed
-   output  	     rrm_valid,
-   output reg [54:0] rrm_addr,
-   output [7:0]      rrm_tag,
-   input 	     rrm_ready
+   output 		       rrm_valid,
+   output reg [54:0] 	       rrm_addr,
+   output [7:0] 	       rrm_tag,
+   input 		       rrm_ready
    );
 
+   parameter ENABLE = 8'b00010001;
+   parameter NBITS_TAG_LOW = 3;
+   
    reg [3:0] 	     state;
    wire [3:0] 	     o_req_valid;
    wire [54:0] 	     rr_addr[0:3];
@@ -52,14 +52,7 @@ module fpc_rr_mux
    genvar 	     i;
    generate
       for (i = 0; i < 4; i = i+1) begin: block_fill
-	 if(i>0) 
-	   begin
-	      assign r_ready[i] = 1'b0;
-	      assign both_valid[i] = 1'b0;
-	      assign rr_ready[i] = 1'b0;
-	      assign rr_addr[i] = 1'b0;
-	   end
-	 else
+	 if((2**i & ENABLE) != 0)
 	   begin
 	      wire req_valid;
 	      assign both_valid[i] = req_valid & rr_valid[i];
@@ -75,6 +68,14 @@ module fpc_rr_mux
 		 .o_valid(req_valid),
 		 .o_addr(rr_addr[i]));
 	   end
+	 else
+	   begin
+	      assign r_ready[i] = 1'b0;
+	      assign both_valid[i] = 1'b0;
+	      assign rr_ready[i] = 1'b0;
+	      assign rr_addr[i] = 1'b0;
+	   end
+
       end
    endgenerate
    
@@ -92,10 +93,10 @@ module fpc_rr_mux
 	if(state[1:0] == 0)
 	  begin
 	     case(state[3:2])
-	       0: rrm_tag_low <= rr0_tag_low;
-	       1: rrm_tag_low <= rr1_tag_low;
-	       2: rrm_tag_low <= rr2_tag_low;
-	       3: rrm_tag_low <= rr3_tag_low;
+	       0: rrm_tag_low <= rr_tag_low[1 * NBITS_TAG_LOW - 1: 0 * NBITS_TAG_LOW];
+	       1: rrm_tag_low <= rr_tag_low[2 * NBITS_TAG_LOW - 1: 1 * NBITS_TAG_LOW];
+	       2: rrm_tag_low <= rr_tag_low[3 * NBITS_TAG_LOW - 1: 2 * NBITS_TAG_LOW];
+	       3: rrm_tag_low <= rr_tag_low[4 * NBITS_TAG_LOW - 1: 3 * NBITS_TAG_LOW];
 	     endcase
 	     rrm_addr <= rr_addr[state[3:2]];
 	  end

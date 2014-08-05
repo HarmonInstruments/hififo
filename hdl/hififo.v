@@ -33,17 +33,22 @@ module hififo_pcie
    // FIFOs
    input [7:0] 	 fifo_clock,
    output [7:0]  fifo_reset,
-   input [63:0]  tpc0_data,
-   input 	 tpc0_write,
-   output 	 tpc0_ready,
-   output [63:0] fpc0_data,
-   input 	 fpc0_read,
-   output 	 fpc0_valid
+   input [7:0] 	 fifo_rw,
+   output [7:0]  fifo_ready,
+   output [63:0] fifo_data_0,
+   output [63:0] fifo_data_1,
+   output [63:0] fifo_data_2,
+   output [63:0] fifo_data_3,
+   input [63:0]  fifo_data_4,
+   input [63:0]  fifo_data_5,
+   input [63:0]  fifo_data_6,
+   input [63:0]  fifo_data_7
    );
    
    parameter ENABLE = 8'b00010001;
-   
-   assign fifo_reset = 8'd0;
+   parameter NBITS_TAG_LOW = 3;
+      
+   assign fifo_reset = pci_reset ? 8'hFF: 8'h0;
    
    // interrupts
    wire 	 interrupt;
@@ -75,11 +80,11 @@ module hififo_pcie
 
    wire [3:0] 	rr_mux_valid;
    wire [3:0] 	rr_mux_ready;
-   wire [2:0] 	rr_tag_low0;
-        
-   wire 	tx_wr_valid;
-   wire 	tx_wr_ready;
-   wire [65:0] 	tx_wr_data0;
+   wire [NBITS_TAG_LOW-1:0] rr_mux_tag_low[0:3];
+   
+   wire [3:0] 	tx_wr_valid;
+   wire [3:0] 	tx_wr_ready;
+   wire [65:0] 	tx_wr_data[0:3];
 
    wire [7:0] 	r_valid;
    wire [60:0] 	r_addr;
@@ -90,7 +95,17 @@ module hififo_pcie
    reg [1:0] 	reset_fifo = 3;
    
    wire [31:0] 	status[0:7];
-         
+   wire [63:0] 	fifo_data[0:7];
+
+   assign fifo_data_0 = fifo_data[0];
+   assign fifo_data_1 = fifo_data[1];
+   assign fifo_data_2 = fifo_data[2];
+   assign fifo_data_3 = fifo_data[3];
+   assign fifo_data[4] = fifo_data_4;
+   assign fifo_data[5] = fifo_data_5;
+   assign fifo_data[6] = fifo_data_6;
+   assign fifo_data[7] = fifo_data_7;
+               
    always @ (posedge clock)
      begin
 	reset_fifo <= pci_reset ? 2'b11 : reset_fifo_0;
@@ -99,61 +114,92 @@ module hififo_pcie
 	endcase
 	if(rx_rr_valid)
 	  case(rx_address)
-	    0:  tx_rc_data <= 1'b0;
-	    1:  tx_rc_data <= 32'h0101;
+	    default: tx_rc_data <= 1'b0;
+	    1:  tx_rc_data <= ENABLE;
 	    32: tx_rc_data <= status[0];
+	    36: tx_rc_data <= status[1];
+	    40: tx_rc_data <= status[2];
+	    44: tx_rc_data <= status[3];
 	    48: tx_rc_data <= status[4];
+	    52: tx_rc_data <= status[5];
+	    56: tx_rc_data <= status[6];
+	    60: tx_rc_data <= status[7];
 	  endcase
 	tx_rc_done <= rx_rr_valid;
      end
-      
-   pcie_from_pc_fifo fpc0_fifo
-     (.clock(clock),
-      .reset(reset_fifo[0]),
-      .status(status[0]),
-      .fifo_number(2'd0),
-      // read completion
-      .rc_valid(rx_rc_valid),
-      .rc_tag(rx_rc_tag),
-      .rc_index(rx_rc_index),
-      .rc_data(rx_data),
-      // read request
-      .rr_valid(rr_mux_valid[0]),
-      .rr_ready(rr_mux_ready[0]),
-      .rr_tag_low(rr_tag_low0),    
-      // FIFO
-      .fifo_clock(fifo_clock[0]),
-      .fifo_read(fpc0_read),
-      .fifo_read_data(fpc0_data),
-      .fifo_read_valid(fpc0_valid)
-      );
-
-   assign 	rr_mux_valid[3:1] = 0;
-         
-   hififo_tpc_fifo tpc0_fifo
-     (.clock(clock),
-      .reset(reset_fifo[1]),
-      .pci_id(pci_id),
-      .status(status[4]),
-      // request unit
-      .r_valid(r_valid[4]),
-      .r_addr(r_addr),
-      .r_count(r_count),
-      .r_ready(r_ready[4]),
-      // write request to TX
-      .wr_valid(tx_wr_valid),
-      .wr_ready(tx_wr_ready),
-      .wr_data(tx_wr_data0),
-      // user FIFO
-      .fifo_clock(fifo_clock[4]),
-      .fifo_data(tpc0_data),
-      .fifo_write(tpc0_write),
-      .fifo_ready(tpc0_ready)
-      );
-
-   assign r_ready[7:5] = 3'd0;
    
-   hififo_request hififo_request
+   genvar i;
+   generate
+      for (i = 0; i < 8; i = i+1) begin: fifo
+	 // i = 0 to 4: FPC FIFO
+	 if((2**i & ENABLE & 8'h0F) != 0) 
+	   begin
+	      pcie_from_pc_fifo fpc_fifo
+		(.clock(clock),
+		 .reset(fifo_reset[i]),
+		 .status(status[i]),
+		 .fifo_number(i),
+		 // read completion
+		 .rc_valid(rx_rc_valid),
+		 .rc_tag(rx_rc_tag),
+		 .rc_index(rx_rc_index),
+		 .rc_data(rx_data),
+		 // read request
+		 .rr_valid(rr_mux_valid[i]),
+		 .rr_ready(rr_mux_ready[i]),
+		 .rr_tag_low(rr_mux_tag_low[i]),    
+		 // FIFO
+		 .fifo_clock(fifo_clock[i]),
+		 .fifo_read(fifo_rw[i]),
+		 .fifo_read_data(fifo_data[i]),
+		 .fifo_read_valid(fifo_ready[i])
+		 );
+	   end
+	 else if(i<4)
+	   begin
+	      assign fifo_data[i] = 0;
+	      assign rr_mux_valid[i] = 0;
+	      assign rr_mux_tag_low[i] = 0;
+	   end
+	 // i = 4 to 7: TPC FIFO
+	 if((2**i & ENABLE & 8'hF0) != 0) 
+	   begin
+	      hififo_tpc_fifo tpc_fifo
+		(.clock(clock),
+		 .reset(fifo_reset[i]),
+		 .pci_id(pci_id),
+		 .status(status[i]),
+		 // request unit
+		 .r_valid(r_valid[i]),
+		 .r_addr(r_addr),
+		 .r_count(r_count),
+		 .r_ready(r_ready[i]),
+		 // write request to TX
+		 .wr_valid(tx_wr_valid[i-4]),
+		 .wr_ready(tx_wr_ready[i-4]),
+		 .wr_data(tx_wr_data[i-4]),
+		 // user FIFO
+		 .fifo_clock(fifo_clock[i]),
+		 .fifo_data(fifo_data[i]),
+		 .fifo_write(fifo_rw[i]),
+		 .fifo_ready(fifo_ready[i])
+		 );
+	   end
+	 else if(i>4)
+	   begin
+	      assign tx_wr_data[i-4] = 0;
+	      assign tx_wr_valid[i-4] = 0;
+	      assign r_ready[i-4] = 0;
+	   end
+	 if((2**i & ENABLE) == 0)
+	   begin
+	      assign status[i] = 0;
+	      assign fifo_ready[i] = 0;
+	   end
+      end
+   endgenerate
+   
+   hififo_request #(.ENABLE(ENABLE)) hififo_request
      (
       .clock(clock),
       .reset(pci_reset),
@@ -166,9 +212,9 @@ module hififo_pcie
       .r_addr(r_addr),
       .r_count(r_count),
       .r_ready(r_ready)
-     );
+      );
    
-   fpc_rr_mux fpc_rr_mux
+   fpc_rr_mux #(.ENABLE(ENABLE), .NBITS_TAG_LOW(NBITS_TAG_LOW)) fpc_rr_mux
      (
       .clock(clock),
       .reset(pci_reset),
@@ -180,10 +226,7 @@ module hififo_pcie
       // read request in
       .rr_valid(rr_mux_valid),
       .rr_ready(rr_mux_ready),
-      .rr0_tag_low(rr_tag_low0),
-      .rr1_tag_low(1'b0),
-      .rr2_tag_low(1'b0),
-      .rr3_tag_low(1'b0),
+      .rr_tag_low({rr_mux_tag_low[3], rr_mux_tag_low[2], rr_mux_tag_low[1], rr_mux_tag_low[0]}),
       // rr request multiplexed
       .rrm_valid(tx_rr_valid),
       .rrm_addr(tx_rr_addr),
@@ -236,7 +279,10 @@ module hififo_pcie
       // write request (wr)
       .wr_valid(tx_wr_valid),
       .wr_ready(tx_wr_ready),
-      .wr_data0(tx_wr_data0),
+      .wr_data0(tx_wr_data[0]),
+      .wr_data1(tx_wr_data[1]),
+      .wr_data2(tx_wr_data[2]),
+      .wr_data3(tx_wr_data[3]),
       // AXI stream to PCI Express core
       .tx_tready(s_axis_tx_tready),
       .tx_tdata(s_axis_tx_tdata),
