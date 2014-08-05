@@ -41,30 +41,32 @@ module fpc_rr_mux
    );
 
    reg [3:0] 	     state;
-   reg [2:0] 	     tag_low;
-   assign rrm_tag[2:0] = tag_low;
-   assign rrm_tag[7:3] = state[3:2];
-   assign rrm_valid = state[1:0] == 3;
-   
    wire [3:0] 	     o_req_valid;
-   wire [3:0] 	     both_valid = o_req_valid & rr_valid;
+   wire [3:0] 	     o_interrupt;
    wire [54:0] 	     rr_addr[0:3];
+   wire [3:0] 	     both_valid;
+   reg 		     rrm_interrupt;
+   reg [2:0] 	     rrm_tag_low;
+   assign rrm_tag = {rrm_interrupt, 1'b0, state[3:2], 1'b0, rrm_tag_low};
+   assign rrm_valid = state[1:0] == 3;
    
    genvar 	     i;
    generate
       for (i = 0; i < 4; i = i+1) begin: block_fill
-	 if(i>1) 
+	 if(i>0) 
 	   begin
 	      assign r_ready[i] = 1'b0;
-	      assign o_req_valid[i] = 1'b0;
+	      assign both_valid[i] = 1'b0;
 	      assign rr_ready[i] = 1'b0;
 	      assign rr_addr[i] = 1'b0;
+	      assign o_interrupt[i] = 1'b0;
 	   end
 	 else
 	   begin
-	      assign r_ready[i] = ~o_req_valid[i];
-	      assign rr_ready[i] = o_req_valid[i] && (state == 2*i+1);
-	      
+	      wire req_valid;
+	      assign both_valid[i] = req_valid & rr_valid[i];
+	      assign r_ready[i] = ~req_valid;
+	      assign rr_ready[i] = req_valid && (state == 2*i+1);
 	      request_count rcount
 		(.clock(clock),
 		 .reset(reset), 
@@ -73,10 +75,10 @@ module fpc_rr_mux
 		 .i_count(r_count[18:6]), 
 		 .i_interrupt(r_interrupt), 
 		 .o_ready(state == 2 + 4*i),
-		 .o_valid(o_req_valid[i]),
+		 .o_valid(req_valid),
 		 .o_addr(rr_addr[i]),
 		 .o_count(),
-		 .o_interrupt());
+		 .o_interrupt(o_interrupt[i]));
 	   end
       end
    endgenerate
@@ -92,18 +94,17 @@ module fpc_rr_mux
 	    2: state <= state + 1'b1;
 	    3: state <= state + rrm_ready;
 	  endcase
-	case(state)
-	  0:  tag_low <= rr0_tag_low;
-	  4:  tag_low <= rr1_tag_low;
-	  8:  tag_low <= rr2_tag_low;
-	  12: tag_low <= rr3_tag_low;
-	endcase
-	case(state)
-	  0:  rrm_addr <= rr_addr[0];
-	  4:  rrm_addr <= rr_addr[1];
-	  8:  rrm_addr <= rr_addr[2];
-	  12: rrm_addr <= rr_addr[3];
-	endcase
+	if(state[1:0] == 0)
+	  begin
+	     rrm_interrupt <= o_interrupt[state[3:2]];
+	     case(state[3:2])
+	       0: rrm_tag_low <= rr0_tag_low;
+	       1: rrm_tag_low <= rr1_tag_low;
+	       2: rrm_tag_low <= rr2_tag_low;
+	       3: rrm_tag_low <= rr3_tag_low;
+	     endcase
+	     rrm_addr <= rr_addr[state[3:2]];
+	  end
    end
    
 endmodule
@@ -121,6 +122,8 @@ module request_count
    output reg [54:0] o_addr,
    output reg [11:0] o_count,
    output reg 	     o_interrupt);
+
+   reg 		     enable_interrupt = 0;
    
    always @(posedge clock)
      begin
@@ -128,13 +131,12 @@ module request_count
 	  begin
 	     o_addr <= 1'b0;
 	     o_count <= 1'b0;
-	     o_interrupt <= 1'b0;
 	  end
 	else if(i_valid)
 	  begin
 	     o_addr <= i_addr;
 	     o_count <= i_count;
-	     o_interrupt <= i_interrupt;
+	     enable_interrupt <= i_interrupt;
 	  end
 	else if(o_ready)
 	  begin
@@ -142,5 +144,6 @@ module request_count
 	     o_count <= o_count - 1'b1;
 	  end
 	o_valid <= o_count != 0;
+	o_interrupt <= (o_count == 1) && enable_interrupt;
      end
 endmodule

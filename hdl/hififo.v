@@ -47,10 +47,8 @@ module hififo_pcie
    );
   
    assign {tpc0_reset,fpc0_reset} = 2'b00;
-   wire [3:0] 	 interrupt;
-   reg [3:0] 	 interrupt_prev = 0;
-   reg [3:0] 	 interrupt_mask = 0;
-   reg [3:0] 	 interrupt_status = 0;
+   wire [1:0] 	 interrupt;
+   reg [1:0] 	 interrupt_status = 0;
    
    // from RX module
    wire 	rx_rc_valid;
@@ -79,11 +77,11 @@ module hififo_pcie
    wire 	tx_wr_ready;
    wire [65:0] 	tx_wr_data0;
 
-   wire [7:0]  r_valid;
-   wire [60:0] r_addr;
-   wire [18:0] r_count;
-   wire        r_interrupt;
-   wire [7:0]  r_ready;
+   wire [7:0] 	r_valid;
+   wire [60:0] 	r_addr;
+   wire [18:0] 	r_count;
+   wire 	r_interrupt;
+   wire [7:0] 	r_ready;
    
    reg [1:0] 	reset_fifo_0 = 3;
    reg [1:0] 	reset_fifo = 3;
@@ -93,11 +91,9 @@ module hififo_pcie
    always @ (posedge clock)
      begin
 	reset_fifo <= pci_reset ? 2'b11 : reset_fifo_0;
-	interrupt_prev <= interrupt;
-	interrupt_out <= (interrupt_mask & (interrupt ^ interrupt_prev)) != 0;
+	interrupt_out <= interrupt != 0;
 	interrupt_status <= pci_reset | (rx_rr_valid && (rx_address == 0)) ? 1'b0 : interrupt_status | interrupt;
 	case({~rx_wr_valid, rx_address})
-	  0: interrupt_mask <= rx_data[3:0];
 	  8: reset_fifo_0 <= rx_data[1:0];
 	endcase	
 	case({~rx_rr_valid, rx_address})
@@ -108,14 +104,11 @@ module hififo_pcie
 	endcase
 	tx_rc_done <= rx_rr_valid;
      end
-
-   assign interrupt[3] = 0;
-   assign interrupt[1] = 0;
       
    pcie_from_pc_fifo fpc0_fifo
      (.clock(clock),
       .reset(reset_fifo[0]),
-      .interrupt(interrupt[2]),
+      .interrupt(interrupt[1]),
       .status(fpc_status),
       .fifo_number(2'd0),
       // read completion
