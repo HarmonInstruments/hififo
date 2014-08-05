@@ -57,12 +57,15 @@ module hififo_tpc_fifo
    wire [63:0] 	     wr_addr = {addr, 3'd0};
    wire [63:0] 	     o_data;
    reg [4:0] 	     state = 0;
+
+   reg [28:0] 	     byte_count;
    
-   assign status = {count, 3'd0};
+   assign status = {byte_count, 3'd0};
    assign r_ready = count == 0;
    
    always @ (posedge clock)
      begin
+	byte_count <= reset ? 1'b0 : byte_count + o_read;
 	if(reset)
 	  r_interrupt_q <= 1'b0;
 	else if(r_valid)
