@@ -48,8 +48,7 @@ module hififo_tpc_fifo
    // clock
    reg [60:0] 	     addr; // 8 bytes
    reg [19:0] 	     count; // 8 bytes
-   reg 		     interrupt_r;
-   
+   reg 		     r_interrupt_q;
    wire 	     o_almost_empty;
    wire 	     o_read = (wr_ready && wr_valid) || ((state != 0) && (state < 30));
    reg [63:0] 	     wr_data_next;
@@ -65,22 +64,20 @@ module hififo_tpc_fifo
    always @ (posedge clock)
      begin
 	if(reset)
-	  begin
-	     count <= 1'b0;
-	     interrupt_r <= 1'b0;
-	  end
+	  r_interrupt_q <= 1'b0;
 	else if(r_valid)
-	  begin
-	     addr <= r_addr;
-	     count <= r_count;
-	     interrupt_r <= r_interrupt & r_valid;
-	  end
+	  r_interrupt_q <= r_interrupt;
+	if(reset)
+	  count <= 1'b0;
+	else if(r_valid)
+	  count <= r_count;
 	else if(o_read)
-	  begin
-	     count <= count - 1'b1;
-	     addr <= addr + 1'b1;
-	  end
-	interrupt <= interrupt_r && (count == 0);
+	  count <= count - 1'b1;
+	if(r_valid)
+	  addr <= r_addr;
+	else if(o_read)
+	  addr <= addr + 1'b1;
+	interrupt <= r_interrupt_q && (count == 1) && o_read;
 	wr_valid <= reset ? 1'b0 : (((state == 0) || (state > 30)) && wr_valid_set);
 	if(reset)
 	  state <= 1'b0;
