@@ -114,8 +114,6 @@ module pcie_core_wrap
    output [15:0] pci_id,
    input 	 interrupt,
    output 	 interrupt_rdy,
-   input [3:0] 	 interrupt_num,
-   output [2:0]  interrupts_enabled,
    output 	 pci_reset,
    output 	 clock,
         // AXI to core

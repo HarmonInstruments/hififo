@@ -53,8 +53,6 @@ module hififo_pcie
    // interrupts
    wire 	 interrupt;
    wire 	 interrupt_rdy;
-   wire [3:0] 	 interrupt_num;
-   wire [2:0] 	 interrupts_enabled;
    
    wire [15:0] 	 pci_id;
    wire 	 pci_reset;
@@ -302,9 +300,7 @@ module hififo_pcie
       .clock(clock),
       .pci_id(pci_id),
       .interrupt(interrupt),
-      .interrupt_num(interrupt_num),
       .interrupt_rdy(interrupt_rdy),
-      .interrupts_enabled(interrupts_enabled),
       .pci_reset(pci_reset),
       .s_axis_tx_tready(s_axis_tx_tready),
       .s_axis_tx_tdata(s_axis_tx_tdata),
