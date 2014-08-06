@@ -48,8 +48,8 @@ module pcie_from_pc_fifo
    reg [22:0] 	 byte_count;
    wire 	 write = (rc_tag[7:4] == fifo_number) && rc_valid;
    wire 	 write_last = write && (rc_index == 6'h3F);
-   wire [2:0] 	 n_requested = p_request - p_write;
-   assign rr_valid = (rr_holdoff == 0) && (rr_holdoff == 0) && (n_requested < 6);
+   wire [2:0] 	 n_requested = p_request - p_read[8:6];
+   assign rr_valid = (rr_holdoff == 0) && (n_requested < 6);
    assign rr_tag_low = p_request[2:0];
    assign status = {byte_count, 9'd0};
    wire [63:0] 	 fifo_write_data;
@@ -59,8 +59,14 @@ module pcie_from_pc_fifo
    genvar 	 i;
    generate
       for (i = 0; i < 8; i = i+1) begin: block_fill
-         always @(posedge clock)
-	   block_filled[i] <= reset ? 1'b0 : (write_last && (rc_tag[3:0] == i)) || ((p_write[2:0] == i) ? 1'b0 : block_filled[i]);
+         always @(posedge clock) begin
+	    if(reset)
+	      block_filled[i] <= 1'b0;
+	    else if(write_last && (rc_tag[3:0] == i))
+	      block_filled[i] <= 1'b1;
+	    else if(p_write[2:0] == i)
+	      block_filled[i] <= 1'b0;
+	 end
       end
    endgenerate   
    
@@ -69,7 +75,7 @@ module pcie_from_pc_fifo
 	byte_count <= reset ? 1'b0 : byte_count + ((rc_valid) && (rc_index == 6'h3F));
 	rr_holdoff <= reset ? 1'b0 : rr_ready ? 2'd3 : rr_holdoff - (rr_holdoff != 0);
 	p_read <= reset ? 1'b0 : p_read + ((p_read[8:6] != p_write[2:0]) && fifo_ready);
-	p_write <= reset ? 1'b0 : p_write + block_filled[p_write[2:0]];
+	p_write <= reset ? 1'b0 : p_write + (block_filled[p_write[2:0]]);
 	p_request <= reset ? 1'b0 : p_request + rr_ready;
 	fifo_write_0 <= ((p_read[8:6] != p_write[2:0]) && fifo_ready);
 	fifo_write_1 <= fifo_write_0;
