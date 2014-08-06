@@ -29,7 +29,7 @@ module pcie_rx
    output reg [5:0]  completion_index = 0,
    output [7:0]      completion_tag,
    output reg [63:0] data = 0,
-   output [10:0]     address,
+   output [5:0]      address,
    output [31:0]     rr_rc_dw2,
    // AXI stream from PCIE core
    input 	     tvalid,
@@ -44,7 +44,7 @@ module pcie_rx
 
    reg [12:0] 	     address_q = 0;
    assign completion_tag = address_q[12:5];
-   assign address = address_q[10:0];
+   assign address = address_q[5:0];
    
    reg 		     tvalid_q = 0;
    reg [63:0] 	     tdata_q = 0;

@@ -21,39 +21,33 @@
 module hififo_pcie
   (
    // IO pins
-   output [3:0]  pci_exp_txp,
-   output [3:0]  pci_exp_txn,
-   input [3:0] 	 pci_exp_rxp,
-   input [3:0] 	 pci_exp_rxn,
-   input 	 sys_clk_p,
-   input 	 sys_clk_n,
-   input 	 sys_rst_n,
+   output [3:0]     pci_exp_txp,
+   output [3:0]     pci_exp_txn,
+   input [3:0] 	    pci_exp_rxp,
+   input [3:0] 	    pci_exp_rxn,
+   input 	    sys_clk_p,
+   input 	    sys_clk_n,
+   input 	    sys_rst_n,
    // from core
-   output 	 clock,
+   output 	    clock,
    // FIFOs
-   input [7:0] 	 fifo_clock,
-   output [7:0]  fifo_reset,
-   input [7:0] 	 fifo_rw,
-   output [7:0]  fifo_ready,
-   output [63:0] fifo_data_0,
-   output [63:0] fifo_data_1,
-   output [63:0] fifo_data_2,
-   output [63:0] fifo_data_3,
-   input [63:0]  fifo_data_4,
-   input [63:0]  fifo_data_5,
-   input [63:0]  fifo_data_6,
-   input [63:0]  fifo_data_7
+   input [7:0] 	    fifo_clock,
+   output reg [7:0] fifo_reset,
+   input [7:0] 	    fifo_rw,
+   output [7:0]     fifo_ready,
+   output [63:0]    fifo_data_0,
+   output [63:0]    fifo_data_1,
+   output [63:0]    fifo_data_2,
+   output [63:0]    fifo_data_3,
+   input [63:0]     fifo_data_4,
+   input [63:0]     fifo_data_5,
+   input [63:0]     fifo_data_6,
+   input [63:0]     fifo_data_7
    );
    
    parameter ENABLE = 8'b00010001;
    parameter NBITS_TAG_LOW = 3;
       
-   assign fifo_reset = pci_reset ? 8'hFF: 8'h0;
-   
-   // interrupts
-   wire 	 interrupt;
-   wire 	 interrupt_rdy;
-   
    wire [15:0] 	 pci_id;
    wire 	 pci_reset;
       
@@ -64,7 +58,7 @@ module hififo_pcie
    wire 	rx_rr_valid;
    wire 	rx_wr_valid;
    wire [63:0] 	rx_data;
-   wire [10:0] 	rx_address;
+   wire [5:0] 	rx_address;
 
    // read completion request to TX module
    wire [31:0] 	tx_rc_dw2;
@@ -88,11 +82,15 @@ module hififo_pcie
    wire [60:0] 	r_addr;
    wire [18:0] 	r_count;
    wire [7:0] 	r_ready;
-   
-   reg [1:0] 	reset_fifo_0 = 3;
-   reg [1:0] 	reset_fifo = 3;
-   
+      
    wire [31:0] 	status[0:7];
+
+   // interrupts
+   reg 		interrupt;
+   wire 	interrupt_rdy;
+   wire [7:0] 	interrupt_status;
+   wire [7:0] 	interrupt_individual;
+   
    wire [63:0] 	fifo_data[0:7];
 
    assign fifo_data_0 = fifo_data[0];
@@ -103,25 +101,32 @@ module hififo_pcie
    assign fifo_data[5] = fifo_data_5;
    assign fifo_data[6] = fifo_data_6;
    assign fifo_data[7] = fifo_data_7;
-               
+
    always @ (posedge clock)
      begin
-	reset_fifo <= pci_reset ? 2'b11 : reset_fifo_0;
-	case({~rx_wr_valid, rx_address})
-	  8: reset_fifo_0 <= rx_data[1:0];
-	endcase
+	interrupt <= (interrupt_individual != 0) | (interrupt & ~interrupt_rdy & ~pci_reset);
+	if(pci_reset)
+	  fifo_reset <= 8'hFF;
+	else if(rx_wr_valid)
+	  case(rx_address)
+	    3: fifo_reset <= fifo_reset | rx_data[7:0]; // set
+	    4: fifo_reset <= fifo_reset & ~rx_data[7:0]; // clear
+	  endcase
 	if(rx_rr_valid)
 	  case(rx_address)
-	    default: tx_rc_data <= 1'b0;
+	    0:  tx_rc_data <= interrupt_status;
 	    1:  tx_rc_data <= ENABLE;
-	    32: tx_rc_data <= status[0];
-	    36: tx_rc_data <= status[1];
-	    40: tx_rc_data <= status[2];
-	    44: tx_rc_data <= status[3];
-	    48: tx_rc_data <= status[4];
-	    52: tx_rc_data <= status[5];
-	    56: tx_rc_data <= status[6];
-	    60: tx_rc_data <= status[7];
+	    3:  tx_rc_data <= fifo_reset;
+	    4:  tx_rc_data <= fifo_reset;
+	    16: tx_rc_data <= status[0];
+	    18: tx_rc_data <= status[1];
+	    20: tx_rc_data <= status[2];
+	    22: tx_rc_data <= status[3];
+	    24: tx_rc_data <= status[4];
+	    26: tx_rc_data <= status[5];
+	    28: tx_rc_data <= status[6];
+	    30: tx_rc_data <= status[7];
+	    default: tx_rc_data <= 1'b0;
 	  endcase
 	tx_rc_done <= rx_rr_valid;
      end
@@ -132,11 +137,20 @@ module hififo_pcie
 	 // i = 0 to 4: FPC FIFO
 	 if((2**i & ENABLE & 8'h0F) != 0) 
 	   begin
+	      hififo_interrupt #(.NBITS(23)) hififo_interrupt
+		(.clock(clock),
+		 .reset(pci_reset),
+		 .write(rx_wr_valid && (rx_address == (16 + 2*i))),
+		 .wdata(rx_data[31:0]),
+		 .count(status[i]),
+		 .read(rx_rr_valid && (rx_address == 0)),
+		 .out(interrupt_individual[i]),
+		 .status(interrupt_status[i]));
 	      pcie_from_pc_fifo fpc_fifo
 		(.clock(clock),
 		 .reset(fifo_reset[i]),
 		 .status(status[i]),
-		 .fifo_number(i),
+		 .fifo_number(i[1:0]),
 		 // read completion
 		 .rc_valid(rx_rc_valid),
 		 .rc_tag(rx_rc_tag),
@@ -162,6 +176,15 @@ module hififo_pcie
 	 // i = 4 to 7: TPC FIFO
 	 if((2**i & ENABLE & 8'hF0) != 0) 
 	   begin
+	      hififo_interrupt #(.NBITS(29)) hififo_interrupt
+		(.clock(clock),
+		 .reset(pci_reset),
+		 .write(rx_wr_valid && (rx_address == (16 + 2*i))),
+		 .wdata(rx_data[31:0]),
+		 .count(status[i]),
+		 .read(rx_rr_valid && (rx_address == 0)),
+		 .out(interrupt_individual[i]),
+		 .status(interrupt_status[i]));
 	      hififo_tpc_fifo tpc_fifo
 		(.clock(clock),
 		 .reset(fifo_reset[i]),
@@ -193,6 +216,8 @@ module hififo_pcie
 	   begin
 	      assign status[i] = 0;
 	      assign fifo_ready[i] = 0;
+	      assign interrupt_individual[i] = 0;
+	      assign interrupt_status[i] = 0;
 	   end
       end
    endgenerate

@@ -21,7 +21,7 @@
 module tb_hififo_pcie;
    reg clock = 0;
    reg reset = 1;
-   wire interrupt = 0;
+   wire interrupt;
    
    // AXI
    reg 	t_tready;
@@ -88,6 +88,9 @@ module tb_hififo_pcie;
    assign dut.pcie_core_wrap.clock = clock;
    assign dut.pcie_core_wrap.pci_reset = reset;
 
+   assign interrupt = dut.pcie_core_wrap.interrupt & dut.pcie_core_wrap.interrupt_rdy;
+   
+
    sequencer sequencer
      (.clock(clock),
       .reset(reset),
@@ -110,10 +113,9 @@ module pcie_core_wrap
    input 	 sys_clk_p,
    input 	 sys_clk_n,
    input 	 sys_rst_n,
-        //
    output [15:0] pci_id,
    input 	 interrupt,
-   output 	 interrupt_rdy,
+   output reg 	 interrupt_rdy,
    output 	 pci_reset,
    output 	 clock,
         // AXI to core
@@ -129,5 +131,7 @@ module pcie_core_wrap
    );
    
    assign pci_id = 16'hDEAD;
+   always @ (posedge clock)
+     interrupt_rdy <= interrupt;
    
 endmodule

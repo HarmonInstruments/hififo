@@ -22,56 +22,29 @@ module hififo_interrupt
   (
    input 	clock,
    input 	reset,
-   // PIO
-   input 	pio_wvalid,
-   input [63:0] pio_wdata,
-   input [10:0] pio_addr,
-   //
-   output reg 	interrupt,
-   input 	interrupt_rdy,
-   output [3:0] interrupt_num,
-   input [2:0] 	interrupts_enabled
+   input 	write,
+   input [31:0] wdata,
+   input [31:0] count,
+   input 	read,
+   output reg 	out = 0, // high one cycle after match
+   output reg 	status = 0 // high until status read
    );
-   parameter enables = 8'b00010001;
-   parameter LOWBIT_FPC = 9;
-   parameter LOWBIT_TPC = 3;
-   
-   genvar 	i;
-   generate
-      for (i = 0; i < 8; i = i+1) begin: iproc
-	 if((2**i & enables) != 0)
-	   begin
-	      if(i<4)
-		begin
-		   wire [31:0]           status;
-		   reg [31-LOWBIT_FPC:0] matchval;
-		   wire 		 match = matchval == status[31:LOWBIT_FPC];
-		   always @ (posedge clock)
-		     matchval <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 32 + 4*i)) ? pio_wdata[31:LOWBIT_FPC] : matchval;
-		end
-	      else
-		begin
-		   wire [31:0]           status;
-		   reg [31-LOWBIT_TPC:0] matchval;
-		   wire 		 match = matchval == status[31:LOWBIT_TPC];
-		   always @ (posedge clock)
-		     matchval <= reset ? 1'b0 : (pio_wvalid && (pio_addr == 32 + 4*i)) ? pio_wdata[31:LOWBIT_TPC] : matchval;
-		end
-	      always @ (posedge clock)
-		begin
-		end
-	   end
-	 else
-	   begin
-	   end
-      end
-   endgenerate
+   parameter NBITS = 32;
+   reg [NBITS-1:0] matchval = 0;
+   wire 	   match = matchval == count[31:32-NBITS];
+   reg 		   match_prev;
+   reg 		   enable = 0;
    
    always @ (posedge clock)
      begin
-	if(reset)
-	  interrupt <= 1'b0;
-	
+	if(reset | out)
+	  enable <= 1'b0;
+	else if(write)
+	  enable <= ~wdata[0];
+	if(write)
+	  matchval <= wdata[31:32-NBITS];
+	match_prev <= match;
+	out <= enable & match & ~match_prev;
+	status <= out | (status & ~read & ~reset);
      end
-   
 endmodule

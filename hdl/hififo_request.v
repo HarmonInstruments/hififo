@@ -25,7 +25,7 @@ module hififo_request
    // PIO for page table writes
    input 	 pio_wvalid,
    input [63:0]  pio_wdata,
-   input [10:0]  pio_addr,
+   input [5:0] 	 pio_addr,
    // from request unit
    output [7:0]  r_valid,
    output [60:0] r_addr, // 8 bytes
@@ -58,7 +58,7 @@ module hififo_request
 	      assign r_valid[i] = read_d;
 	      always @ (posedge clock)
 		begin
-		   p_in <= reset ? 1'b0 : p_in + (pio_wvalid && (pio_addr[10:4] == 1) && (pio_addr[3:0] == 2*i + 1));
+		   p_in <= reset ? 1'b0 : p_in + (pio_wvalid && (pio_addr[5:4] == 1) && (pio_addr[3:0] == 2*i + 1));
 		   p_out <= reset ? 1'b0 : p_out + read_a;
 		   read_b <= read_a;
 		   read_c <= read_b;
@@ -79,7 +79,7 @@ module hififo_request
    always @ (posedge clock)
      begin
 	state <= state + 1'b1;
-        if(pio_wvalid & (pio_addr[10:4] == 1) & ~pio_addr[0])
+        if(pio_wvalid & (pio_addr == 2))
 	  pio_high <= pio_wdata[21:3];
 	ram_addr <= addr_out[state];
      end
@@ -87,7 +87,7 @@ module hififo_request
    block_ram #(.DBITS(80), .ABITS(9)) bram_req
      (.clock(clock),
       .w_data({pio_high, pio_wdata[63:3]}),
-      .w_valid(pio_wvalid && (pio_addr[10:4] == 1) && pio_addr[0]),
+      .w_valid(pio_wvalid && (pio_addr[5:4] == 1) && pio_addr[0]),
       .w_addr(addr_in[pio_addr[3:1]]),
       .r_data({r_count,r_addr}),
       .r_addr(ram_addr)
