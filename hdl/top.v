@@ -36,7 +36,7 @@ module vna_dsp
    wire [63:0] 	    fpc_data;
    reg 		    fpc_read = 1'b0;
    
-   wire [7:0] 	    fifo_ready;
+   wire [7:0] 	    fifo_ready, fifo_reset;
    wire 	    fpc_valid = fifo_ready[0];
    wire 	    tpc_ready = fifo_ready[4];
    wire [63:0] 	    seq_fpc_data, seq_tpc_data;
@@ -52,7 +52,7 @@ module vna_dsp
       .sys_rst_n(pcie_rst_n),
       .clock(clock),
       .fifo_clock({8{clock}}),
-      .fifo_reset(),
+      .fifo_reset(fifo_reset),
       .fifo_ready(fifo_ready),
       .fifo_rw({2'b11, seq_write, tpc_write, 2'b11, seq_read, fpc_read}),
       .fifo_data_0(fpc_data),
@@ -67,7 +67,7 @@ module vna_dsp
 
    sequencer sequencer
      (.clock(clock),
-      .reset(reset),
+      .reset(fifo_reset[0]),
       .fpc_read(seq_read),
       .fpc_valid(fifo_ready[1]),
       .fpc_data(seq_fpc_data),
