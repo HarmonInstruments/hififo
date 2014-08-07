@@ -70,6 +70,7 @@ static struct pci_device_id hififo_pci_table[] = {
 #define write_address(address) (writeq(cpu_to_le64(address), fifo->local_base + 1))
 
 static struct class *hififo_class;
+static int hififo_count;
 
 struct hififo_fifo {
   dma_addr_t dma_addr;
@@ -432,7 +433,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
       printk(KERN_NOTICE DEVICE_NAME ": Error %d adding cdev\n", retval);
       return retval;
     }
-    sprintf(tmpstr, "hififo%c%d", 'a', i);
+    sprintf(tmpstr, "hififo_%d_%d", hififo_count, i);
     device_create(hififo_class, NULL, MKDEV(MAJOR(dev), i), NULL, tmpstr);
     fifo->n = i;
     fifo->pio_reg_base = drvdata->pio_reg_base;
@@ -447,7 +448,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
       return -ENOMEM;
     }
   }
-
+  hififo_count++;
   /* enable interrupts */
   writereg(drvdata, 0xFFFF, REG_INTERRUPT);
   for(i=0; i<32; i++)
@@ -480,6 +481,7 @@ static struct pci_driver hififo_driver = {
 
 static int __init hififo_init(void){
   printk ("Loading hififo kernel module\n");
+  hififo_count = 0;
   hififo_class = class_create(THIS_MODULE, "hififo");
   if (IS_ERR(hififo_class)) {
     printk(KERN_ERR "Error creating hififo class.\n");
