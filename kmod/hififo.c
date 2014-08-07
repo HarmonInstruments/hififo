@@ -61,15 +61,10 @@ static struct pci_device_id hififo_pci_table[] = {
 #define REG_RESET_SET 3
 #define REG_RESET_CLEAR 4
 
-#define REG_STATUS(x) (2*x + 16)
-#define REG_ADDRESS(x) (2*x + 17)
-
 #define write_count(count) (writeq(cpu_to_le64(count), fifo->pio_reg_base + REG_COUNT))
 #define write_status(status) (writeq(cpu_to_le64(status), fifo->local_base + 0))
 #define read_status() (le32_to_cpu(readl(fifo->local_base + 0)))
 #define write_address(address) (writeq(cpu_to_le64(address), fifo->local_base + 1))
-
-#define REG_LOCAL_COUNT 0
 
 static struct class *hififo_class;
 
@@ -98,9 +93,6 @@ struct hififo_dev {
 #define fifo_writereg(data, addr) (writeq(cpu_to_le64(data), &fifo->pio_reg_base[addr]))
 #define fifo_readreg(addr) le32_to_cpu(readl(&fifo->pio_reg_base[addr]))
 
-#define local_writereg(data, addr) (writeq(cpu_to_le64(data), &fifo->local_base[addr]))
-#define local_readreg(addr) le32_to_cpu(readl(&fifo->local_base[addr]))
-
 #define global_writereg(data, addr) (writeq(cpu_to_le64(data), &drvdata->pio_reg_base[addr]))
 #define global_readreg(addr) le32_to_cpu(readl(&drvdata->pio_reg_base[addr]))
 
@@ -127,7 +119,7 @@ static u32 get_bytes_in_ring_to_pc(struct hififo_fifo *fifo){
   u32 status = read_status();
   u32 bytes_outstanding = fifo->bytes_requested - status;
   u32 bytes_in_buffer = (BUFFER_SIZE - 1) & (fifo->pointer_in - (fifo->pointer_out + bytes_outstanding));
-  printk("tpc: status = %u, bytes available = %u, outstanding = %u\n", status, bytes_in_buffer, bytes_outstanding);
+  printk("tpc: status = %x, bytes available = %x, outstanding = %x\n", status, bytes_in_buffer, bytes_outstanding);
   return bytes_in_buffer;
 }
 
@@ -313,8 +305,15 @@ static int hififo_mmap(struct file *file, struct vm_area_struct *vma)
   return 0;
 }
 
-static struct file_operations fops = {
+static struct file_operations fops_tpc = {
  .read = hififo_read,
+ .unlocked_ioctl = hififo_ioctl,
+ .mmap = hififo_mmap,
+ .open = hififo_open,
+ .release = hififo_release
+};
+
+static struct file_operations fops_fpc = {
  .write = hififo_write,
  .unlocked_ioctl = hififo_ioctl,
  .mmap = hififo_mmap,
@@ -420,9 +419,16 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
       return -ENOMEM;
     }
     drvdata->fifo[i] = fifo;
-    cdev_init(&fifo->cdev, &fops); // void
+    if(i<MAX_FIFOS/2){
+      cdev_init(&fifo->cdev, &fops_fpc); // void
+      fifo->cdev.ops = &fops_fpc;
+    }
+    else{
+      cdev_init(&fifo->cdev, &fops_tpc); // void
+      fifo->cdev.ops = &fops_tpc;
+    }
+
     fifo->cdev.owner = THIS_MODULE;
-    fifo->cdev.ops = &fops;
 
     retval = cdev_add (&fifo->cdev, MKDEV(MAJOR(dev), i), 1);
     if (retval){
@@ -443,7 +449,6 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
       printk("Failed to allocate DMA buffer\n");
       return -ENOMEM;
     }
-
   }
 
   /* enable interrupts */
