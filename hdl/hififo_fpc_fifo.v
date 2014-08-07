@@ -72,7 +72,7 @@ module pcie_from_pc_fifo
    
    always @ (posedge clock)
      begin
-	byte_count <= reset ? 1'b0 : byte_count + ((rc_valid) && (rc_index == 6'h3F));
+	byte_count <= reset ? 1'b0 : byte_count + ((rc_valid) && (rc_tag[7:4] == fifo_number) && (rc_index == 6'h3F));
 	rr_holdoff <= reset ? 1'b0 : rr_ready ? 2'd3 : rr_holdoff - (rr_holdoff != 0);
 	p_read <= reset ? 1'b0 : p_read + ((p_read[8:6] != p_write[2:0]) && fifo_ready);
 	p_write <= reset ? 1'b0 : p_write + (block_filled[p_write[2:0]]);
