@@ -61,7 +61,10 @@ static struct pci_device_id hififo_pci_table[] = {
 #define REG_RESET_SET 3
 #define REG_RESET_CLEAR 4
 
-#define write_count(count) (writeq(cpu_to_le64(count), fifo->pio_reg_base + REG_COUNT))
+#define writereg(s, data, addr) (writeq(cpu_to_le64(data), &s->pio_reg_base[(addr)]))
+#define readreg(s, addr) le32_to_cpu(readl(&s->pio_reg_base[(addr)]))
+
+#define write_count(count) (writereg(fifo, count, REG_COUNT))
 #define write_status(status) (writeq(cpu_to_le64(status), fifo->local_base + 0))
 #define read_status() (le32_to_cpu(readl(fifo->local_base + 0)))
 #define write_address(address) (writeq(cpu_to_le64(address), fifo->local_base + 1))
@@ -89,12 +92,6 @@ struct hififo_dev {
   int nfifos;
   int idreg;
 };
-
-#define fifo_writereg(data, addr) (writeq(cpu_to_le64(data), &fifo->pio_reg_base[addr]))
-#define fifo_readreg(addr) le32_to_cpu(readl(&fifo->pio_reg_base[addr]))
-
-#define global_writereg(data, addr) (writeq(cpu_to_le64(data), &drvdata->pio_reg_base[addr]))
-#define global_readreg(addr) le32_to_cpu(readl(&drvdata->pio_reg_base[addr]))
 
 static int hififo_open(struct inode *inode, struct file *filp){
   struct hififo_fifo *fifo = container_of(inode->i_cdev, struct hififo_fifo, cdev);
@@ -323,7 +320,7 @@ static struct file_operations fops_fpc = {
 
 static irqreturn_t hififo_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   struct hififo_dev *drvdata = dev_id;
-  u64 sr = global_readreg(REG_INTERRUPT);
+  u64 sr = readreg(drvdata, REG_INTERRUPT);
   int i;
   for(i=0; i<MAX_FIFOS; i++){
     if((sr & (1<<i)) && (drvdata->fifo[i] != NULL))
@@ -384,8 +381,8 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   printk(KERN_INFO DEVICE_NAME ": pci_resource_start(dev, 0) = 0x%.8llx, virt = 0x%.16llx\n", (u64) pci_resource_start(pdev, 0), (u64) drvdata->pio_reg_base);
   
   for(i=0; i<8; i++)
-    printk("bar0[%d] = %.8x\n", i, (u32) global_readreg(i));
-  drvdata->idreg = global_readreg(REG_ID);
+    printk("bar0[%d] = %.8x\n", i, (u32) readreg(drvdata, i));
+  drvdata->idreg = readreg(drvdata, REG_ID);
   drvdata->nfifos = 0;
   for(i=0; i<MAX_FIFOS; i++){
     if(drvdata->idreg & (1 << i))
@@ -398,9 +395,9 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   }
 
   /* reset it */
-  global_writereg(0xFFFF, REG_RESET_SET);
+  writereg(drvdata, 0xFFFF, REG_RESET_SET);
   udelay(10); /* wait for completion of anything that was running */
-  global_writereg(0xFFFF, REG_RESET_CLEAR);
+  writereg(drvdata, 0xFFFF, REG_RESET_CLEAR);
 
   retval = alloc_chrdev_region(&dev, 0, drvdata->nfifos, DEVICE_NAME);
   if (retval) {
@@ -452,12 +449,12 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   }
 
   /* enable interrupts */
-  global_writereg(0xFFFF, REG_INTERRUPT);
+  writereg(drvdata, 0xFFFF, REG_INTERRUPT);
   for(i=0; i<32; i++)
-    printk("bar0[%d] = %.8x\n", i, global_readreg(i));
+    printk("bar0[%d] = %.8x\n", i, readreg(drvdata, i));
   udelay(10000); 
   for(i=0; i<32; i++)
-    printk("bar0[%d] = %.8x\n", i, global_readreg(i));
+    printk("bar0[%d] = %.8x\n", i, readreg(drvdata, i));
   /* enable it */
   return 0;
 }
@@ -465,7 +462,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 static void hififo_remove(struct pci_dev *pdev){
   struct hififo_dev *drvdata = pci_get_drvdata(pdev);
   int i;
-  global_writereg(0xFF, REG_RESET_SET);
+  writereg(drvdata, 0xFF, REG_RESET_SET);
   for(i=0; i<MAX_FIFOS; i++){
     if(drvdata->fifo[i] != NULL)
       device_destroy(hififo_class, MKDEV(drvdata->major, i));
