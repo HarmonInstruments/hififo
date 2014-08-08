@@ -32,7 +32,7 @@ module hififo_pcie
    output 	    clock,
    // FIFOs
    input [7:0] 	    fifo_clock,
-   output reg [7:0] fifo_reset,
+   output [7:0]      fifo_reset,
    input [7:0] 	    fifo_rw,
    output [7:0]     fifo_ready,
    output [63:0]    fifo_data_0,
@@ -72,7 +72,7 @@ module hififo_pcie
 
    wire [3:0] 	rr_mux_valid;
    wire [3:0] 	rr_mux_ready;
-   wire [NBITS_TAG_LOW-1:0] rr_mux_tag_low[0:3];
+   wire [(4*NBITS_TAG_LOW)-1:0] rr_mux_tag_low;
    
    wire [3:0] 	tx_wr_valid;
    wire [3:0] 	tx_wr_ready;
@@ -93,6 +93,8 @@ module hififo_pcie
    
    wire [63:0] 	fifo_data[0:7];
 
+   reg [7:0] 	fifo_reset_sysclock;
+   
    assign fifo_data_0 = fifo_data[0];
    assign fifo_data_1 = fifo_data[1];
    assign fifo_data_2 = fifo_data[2];
@@ -106,18 +108,18 @@ module hififo_pcie
      begin
 	interrupt <= (interrupt_individual != 0) | (interrupt & ~interrupt_rdy & ~pci_reset);
 	if(pci_reset)
-	  fifo_reset <= 8'hFF;
+	  fifo_reset_sysclock <= 8'hFF;
 	else if(rx_wr_valid)
 	  case(rx_address)
-	    3: fifo_reset <= fifo_reset | rx_data[7:0]; // set
-	    4: fifo_reset <= fifo_reset & ~rx_data[7:0]; // clear
+	    3: fifo_reset_sysclock <= fifo_reset_sysclock | rx_data[7:0]; // set
+	    4: fifo_reset_sysclock <= fifo_reset_sysclock & ~rx_data[7:0]; // clear
 	  endcase
 	if(rx_rr_valid)
 	  case(rx_address)
 	    0:  tx_rc_data <= interrupt_status;
 	    1:  tx_rc_data <= ENABLE;
-	    3:  tx_rc_data <= fifo_reset;
-	    4:  tx_rc_data <= fifo_reset;
+	    3:  tx_rc_data <= fifo_reset_sysclock;
+	    4:  tx_rc_data <= fifo_reset_sysclock;
 	    16: tx_rc_data <= status[0];
 	    18: tx_rc_data <= status[1];
 	    20: tx_rc_data <= status[2];
@@ -148,7 +150,7 @@ module hififo_pcie
 		 .status(interrupt_status[i]));
 	      pcie_from_pc_fifo fpc_fifo
 		(.clock(clock),
-		 .reset(fifo_reset[i]),
+		 .reset(fifo_reset_sysclock[i]),
 		 .status(status[i]),
 		 .fifo_number(i[1:0]),
 		 // read completion
@@ -159,10 +161,10 @@ module hififo_pcie
 		 // read request
 		 .rr_valid(rr_mux_valid[i]),
 		 .rr_ready(rr_mux_ready[i]),
-		 .rr_tag_low(rr_mux_tag_low[i]),    
+		 .rr_tag_low(rr_mux_tag_low[((i+1)*NBITS_TAG_LOW)-1:i*NBITS_TAG_LOW]),    
 		 // FIFO
 		 .fifo_clock(fifo_clock[i]),
-		 .fifo_read(fifo_rw[i]),
+		 .fifo_read(fifo_rw[i] & ~fifo_reset[i]),
 		 .fifo_read_data(fifo_data[i]),
 		 .fifo_read_valid(fifo_ready[i])
 		 );
@@ -171,7 +173,7 @@ module hififo_pcie
 	   begin
 	      assign fifo_data[i] = 0;
 	      assign rr_mux_valid[i] = 0;
-	      assign rr_mux_tag_low[i] = 0;
+	      assign rr_mux_tag_low[((i+1)*NBITS_TAG_LOW+1)-1:i*NBITS_TAG_LOW] = 0;
 	   end
 	 // i = 4 to 7: TPC FIFO
 	 if((2**i & ENABLE & 8'hF0) != 0) 
@@ -187,7 +189,7 @@ module hififo_pcie
 		 .status(interrupt_status[i]));
 	      hififo_tpc_fifo tpc_fifo
 		(.clock(clock),
-		 .reset(fifo_reset[i]),
+		 .reset(fifo_reset_sysclock[i]),
 		 .pci_id(pci_id),
 		 .status(status[i]),
 		 // request unit
@@ -202,7 +204,7 @@ module hififo_pcie
 		 // user FIFO
 		 .fifo_clock(fifo_clock[i]),
 		 .fifo_data(fifo_data[i]),
-		 .fifo_write(fifo_rw[i]),
+		 .fifo_write(fifo_rw[i] & ~fifo_reset[i]),
 		 .fifo_ready(fifo_ready[i])
 		 );
 	   end
@@ -218,6 +220,20 @@ module hififo_pcie
 	      assign fifo_ready[i] = 0;
 	      assign interrupt_individual[i] = 0;
 	      assign interrupt_status[i] = 0;
+	      assign fifo_reset[i] = 1'b1;
+	   end
+	 else
+	   begin
+	      wire reset_sync_out;
+	      reg [3:0] reset_count = 0;
+	      reg 	reset_out = 1;
+	      assign fifo_reset[i] = reset_out;
+	      always @ (posedge fifo_clock[i])
+		begin
+		   reset_out <= reset_count != 15;
+		   reset_count <= reset_sync_out ? 4'd0 : reset_count + (reset_count != 15);
+		end
+	      sync sync(.clock(fifo_clock[i]), .in(fifo_reset_sysclock[i]), .out(reset_sync_out));
 	   end
       end
    endgenerate
@@ -249,7 +265,7 @@ module hififo_pcie
       // read request in
       .rr_valid(rr_mux_valid),
       .rr_ready(rr_mux_ready),
-      .rr_tag_low({rr_mux_tag_low[3], rr_mux_tag_low[2], rr_mux_tag_low[1], rr_mux_tag_low[0]}),
+      .rr_tag_low(rr_mux_tag_low),
       // rr request multiplexed
       .rrm_valid(tx_rr_valid),
       .rrm_addr(tx_rr_addr),

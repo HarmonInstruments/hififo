@@ -42,8 +42,8 @@ module vna_dsp
 
    reg [63:0] 	    count = 0;
    reg 		    count_write = 0;
-
-         
+   reg 		    null_read = 0;
+            
    hififo_pcie #(.ENABLE(8'b01110111)) hififo
      (.pci_exp_txp(pcie_txp),
       .pci_exp_txn(pcie_txn),
@@ -56,7 +56,7 @@ module vna_dsp
       .fifo_clock({8{clock}}),
       .fifo_reset(fifo_reset),
       .fifo_ready(fifo_ready),
-      .fifo_rw(~fifo_reset & {1'b1, count_write, seq_write, tpc_write, fifo_ready[3:2], seq_read, fpc_read}),
+      .fifo_rw({1'b1, count_write, seq_write, tpc_write, fifo_ready[3], null_read, seq_read, fpc_read}),
       .fifo_data_0(fpc_data),
       .fifo_data_1(seq_fpc_data),
       .fifo_data_2(),
@@ -64,12 +64,12 @@ module vna_dsp
       .fifo_data_4(tpc_data),
       .fifo_data_5(seq_tpc_data),
       .fifo_data_6(count),
-      .fifo_data_7(64'h0)      
+      .fifo_data_7(64'h0)  
       );
 
    sequencer sequencer
      (.clock(clock),
-      .reset(1'b0),
+      .reset(fifo_reset[1]),
       .fpc_read(seq_read),
       .fpc_valid(fifo_ready[1]),
       .fpc_data(seq_fpc_data),
@@ -88,5 +88,6 @@ module vna_dsp
 	fpc_read <= fifo_ready[4];
 	tpc_write <= fifo_ready[0] && fpc_read;
 	tpc_data <= fpc_data;
+	null_read <= fifo_ready[2];
      end
 endmodule

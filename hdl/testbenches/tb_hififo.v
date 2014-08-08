@@ -32,16 +32,6 @@ module tb_hififo_pcie;
    reg 	       r_tvalid;
    reg 	       r_tlast;
    reg [63:0]  r_tdata;
-
-   wire [7:0]  fifo_ready;
-   
-   wire [63:0] tpc0_data;
-   wire	       tpc0_write;
-   wire        tpc0_ready = fifo_ready[4];
-
-   wire [63:0] fpc0_data;
-   wire	       fpc0_read;
-   wire        fpc0_valid = fifo_ready[0];
      
    initial begin
       $dumpfile("dump.vcd");
@@ -50,56 +40,30 @@ module tb_hififo_pcie;
       $to_myhdl(interrupt, t_tdata, t_1dw, t_tlast, t_tvalid);
    end
    
-   hififo_pcie #(.ENABLE(8'b01110111)) dut
-     (.pci_exp_txp(),
-      .pci_exp_txn(),
-      .pci_exp_rxp(4'b0),
-      .pci_exp_rxn(4'b0),
-      .sys_clk_p(1'b0),
-      .sys_clk_n(1'b0),
-      .sys_rst_n(1'b1),
-      .clock(),
-      //.pci_reset(),
-      // FIFOs
-      .fifo_clock({8{clock}}),
-      .fifo_reset(),
-      .fifo_rw({3'b000, tpc0_write, 3'b000, fpc0_read}),
-      .fifo_ready(fifo_ready),
-      .fifo_data_0(fpc0_data),
-      .fifo_data_1(),
-      .fifo_data_2(),
-      .fifo_data_3(),
-      .fifo_data_4(tpc0_data),
-      .fifo_data_5(64'h0),
-      .fifo_data_6(64'h0),
-      .fifo_data_7(64'h0)
-      );
-
-   assign dut.pcie_core_wrap.s_axis_tx_tready = t_tready;
-   assign t_tdata = dut.pcie_core_wrap.s_axis_tx_tdata;
-   assign t_tlast = dut.pcie_core_wrap.s_axis_tx_tlast;
-   assign t_tvalid = dut.pcie_core_wrap.s_axis_tx_tvalid;
-   assign t_1dw = dut.pcie_core_wrap.s_axis_tx_1dw;
-
-   assign dut.pcie_core_wrap.m_axis_rx_tvalid = r_tvalid;
-   assign dut.pcie_core_wrap.m_axis_rx_tlast = r_tlast;
-   assign dut.pcie_core_wrap.m_axis_rx_tdata = r_tdata;
+   vna_dsp dut
+     (.pcie_txp(),
+      .pcie_txn(),
+      .pcie_rxp(4'b0),
+      .pcie_rxn(4'b0),
+      .pcie_refclk_p(1'b0),
+      .pcie_refclk_n(1'b0),
+      .pcie_rst_n(1'b1),
+      .led());
    
-   assign dut.pcie_core_wrap.clock = clock;
-   assign dut.pcie_core_wrap.pci_reset = reset;
+   assign dut.hififo.pcie_core_wrap.s_axis_tx_tready = t_tready;
+   assign t_tdata = dut.hififo.pcie_core_wrap.s_axis_tx_tdata;
+   assign t_tlast = dut.hififo.pcie_core_wrap.s_axis_tx_tlast;
+   assign t_tvalid = dut.hififo.pcie_core_wrap.s_axis_tx_tvalid;
+   assign t_1dw = dut.hififo.pcie_core_wrap.s_axis_tx_1dw;
 
-   assign interrupt = dut.pcie_core_wrap.interrupt & dut.pcie_core_wrap.interrupt_rdy;
+   assign dut.hififo.pcie_core_wrap.m_axis_rx_tvalid = r_tvalid;
+   assign dut.hififo.pcie_core_wrap.m_axis_rx_tlast = r_tlast;
+   assign dut.hififo.pcie_core_wrap.m_axis_rx_tdata = r_tdata;
    
+   assign dut.hififo.pcie_core_wrap.clock = clock;
+   assign dut.hififo.pcie_core_wrap.pci_reset = reset;
 
-   sequencer sequencer
-     (.clock(clock),
-      .reset(reset),
-      .fpc_read(fpc0_read),
-      .fpc_valid(fpc0_valid),
-      .fpc_data(fpc0_data),
-      .tpc_ready(tpc0_ready),
-      .tpc_write(tpc0_write),
-      .tpc_data(tpc0_data));
+   assign interrupt = dut.hififo.pcie_core_wrap.interrupt & dut.hififo.pcie_core_wrap.interrupt_rdy;
       
 endmodule
 

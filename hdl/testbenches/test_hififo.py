@@ -56,7 +56,7 @@ class PCIe_host():
             self.txqueue.put([0xbeef00004A000000 | complete_size | ((512-complete_size*8*i) << 32), 0]) # 8 DW
             self.txqueue.put([combine2dw((reqid_tag << 8) | ((i & 1) << 6), endianswap(self.completion_data[self.complete_addr])), 0])
             for j in range(complete_size):
-                if (reqid_tag & 0xF0) == 0:
+                if (reqid_tag & 0xF0) == 0x10:
                     self.complete_addr += 1
                 self.txqueue.put([combine2dw(endianswap(int(self.completion_data[self.complete_addr-1])>>32), endianswap(self.completion_data[self.complete_addr])), j==(complete_size - 1)])
         
@@ -138,6 +138,11 @@ class PCIe_host():
                 d = combine2dw(endianswap(rxdata[2+i]), endianswap(rxdata[2+i] >> 32))
             self.write_data[address/8 + i & 0xFFFFFF] = d
             print "d[{}] = 0x{:016X}".format(i, d)
+    def write_fpc(self, fifo, address, count, interrupt=False):
+        self.write(count, 2*8)
+        if interrupt:
+            self.write(count, (16+2*fifo)*8)
+        self.write(address, (17+2*fifo)*8)
 
 def seq_wait(x):
     return 1<<60 | x
@@ -150,23 +155,19 @@ p.write(0xF, 0*8)
 # release reset
 p.write(0xFF, 4*8)
 #FPC
-p.write(0x00000800, 2*8)
-p.write(0x00000800, 16*8)
-p.write(0x200000000, 17*8)
-p.write(0x00000800, 2*8)
-p.write(0x400000800, 17*8)
-p.write(0x00003200, 2*8)
-p.write(0xF400001000, 17*8)
-p.write(0x00000200, 2*8)
-p.write(0xF4BEEF0000, 19*8)
+p.write_fpc(fifo=1, address=0x0, count=0x800, interrupt=True)
+p.write_fpc(fifo=1, address=0x400000800, count=0x800)
+p.write_fpc(fifo=1, address=0x400001000, count=0x3200)
+p.write_fpc(fifo=0, address=0xF4BEEF0000, count=0x800)
+p.write_fpc(fifo=2, address=0xE3C0DE0000, count=0x800)
 # TPC
 p.write(0x00000200, 2*8)
-p.write(0x00000400, 24*8)
-p.write(0x600000000, 25*8)
+p.write(0x00000400, 26*8)
+p.write(0x600000000, 27*8)
 p.write(0x00000200, 2*8)
-p.write(0x600000200, 25*8)
+p.write(0x600000200, 27*8)
 p.write(0x00003C00, 2*8)
-p.write(0x800000400, 25*8)
+p.write(0x800000400, 27*8)
 p.read(0*8, 1)
 p.read(1*8, 1)
 p.read(2*8, 1)
@@ -180,7 +181,7 @@ for i in range(64*32):
     p.write_data_expected[i] = i | 0xDEADBEEF00000000
     
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid):
-    r = os.system ("iverilog -Wall -Winfloop -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v ../hififo_request.v ../hififo_interrupt.v")
+    r = os.system ("iverilog -Wall -Winfloop -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v ../hififo_request.v ../hififo_interrupt.v ../top.v")
     if r!=0:
         print "iverilog returned ", r
         exit(1)
@@ -230,11 +231,15 @@ def test_hififo(n=None):
         print "PASS"
     else:
         print "FAIL"
+        fails = 0
         for i in range(len(p.write_data_expected)):
             a = p.write_data[i]
             b = p.write_data_expected[i]
             if a != b:
+                fails += 1
                 print hex(int(a)),hex(int(b)),i
+                if fails == 32:
+                    break
     print "Errors found:", p.errors
 
 if __name__=="__main__":
