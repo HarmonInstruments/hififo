@@ -210,7 +210,7 @@ module hififo_pcie
 	   begin
 	      assign tx_wr_data[i-4] = 0;
 	      assign tx_wr_valid[i-4] = 0;
-	      assign r_ready[i-4] = 0;
+	      assign r_ready[i] = 0;
 	   end
 	 if((2**i & ENABLE) == 0)
 	   begin
