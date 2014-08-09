@@ -34,11 +34,10 @@ module hififo_request
    );
    parameter ENABLE = 8'b00010001;
    
-   reg [81:0] 	 req_ram[0:511];
    reg [8:0] 	 ram_addr;
    
    reg [2:0] 	 state = 0;
-   wire [8:0] 	 addr_in[0:7];
+   wire [5:0] 	 addr_in[0:7];
    wire [8:0] 	 addr_out[0:7];
    
    genvar 	 i;
@@ -54,7 +53,7 @@ module hififo_request
 	      reg  read_c = 0;
 	      reg  read_d = 0;
 	      reg  reset_local;
-	      assign addr_in[i] = 64*i | p_in;
+	      assign addr_in[i] = p_in;
 	      assign addr_out[i] = 64*i | p_out;
 	      assign r_valid[i] = read_d;
 	      always @ (posedge clock)
@@ -90,7 +89,7 @@ module hififo_request
      (.clock(clock),
       .w_data({pio_high, pio_wdata[63:3]}),
       .w_valid(pio_wvalid && (pio_addr[5:4] == 1) && pio_addr[0]),
-      .w_addr(addr_in[pio_addr[3:1]]),
+      .w_addr({pio_addr[3:1], addr_in[pio_addr[3:1]]}),
       .r_data({r_count,r_addr}),
       .r_addr(ram_addr)
       );

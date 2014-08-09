@@ -54,20 +54,18 @@ module fpc_rr_mux
 	 if((2**i & ENABLE) != 0)
 	   begin
 	      reg req_valid;
-	      reg [54:0] o_addr;
-	      reg [12:0] o_count;
+	      reg [54:0] addr;
+	      reg [12:0] count;
 	      assign both_valid[i] = req_valid & rr_valid[i];
 	      assign r_ready[i] = ~req_valid;
 	      assign rr_ready[i] = req_valid && (state == 4*i+3);
-	      assign rr_addr[i] = o_addr;
+	      assign rr_addr[i] = addr;
 	      always @(posedge clock)
 		begin
-		   o_addr <= r_valid[i] ? r_addr[60:6] :
-			     o_addr + (state == 2 + 4*i);
-		   o_count <= reset ? 1'b0 :
-			      r_valid[i] ? r_count[18:6] :
-			      o_count - (state == 2 + 4*i);
-		   req_valid <= o_count != 0;
+		   addr <= r_valid[i] ? r_addr[60:6] : addr + (state == 2 + 4*i);
+		   count <= reset ? 1'b0 :
+			    r_valid[i] ? r_count[18:6] : count - (state == 2 + 4*i);
+		   req_valid <= count != 0;
 		end
 	   end
 	 else
