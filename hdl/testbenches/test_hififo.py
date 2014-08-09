@@ -138,7 +138,7 @@ class PCIe_host():
                 d = combine2dw(endianswap(rxdata[2+i]), endianswap(rxdata[2+i] >> 32))
             self.write_data[address/8 + i & 0xFFFFFF] = d
             print "d[{}] = 0x{:016X}".format(i, d)
-    def write_fpc(self, fifo, address, count, interrupt=False):
+    def write_fifo(self, fifo, address, count, interrupt=False):
         self.write(count, 2*8)
         if interrupt:
             self.write(count, (16+2*fifo)*8)
@@ -155,19 +155,15 @@ p.write(0xF, 0*8)
 # release reset
 p.write(0xFF, 4*8)
 #FPC
-p.write_fpc(fifo=1, address=0x0, count=0x800, interrupt=True)
-p.write_fpc(fifo=1, address=0x400000800, count=0x800)
-p.write_fpc(fifo=1, address=0x400001000, count=0x3200)
-p.write_fpc(fifo=0, address=0xF4BEEF0000, count=0x800)
-p.write_fpc(fifo=2, address=0xE3C0DE0000, count=0x800)
+p.write_fifo(fifo=1, address=0x0, count=0x800, interrupt=True)
+p.write_fifo(fifo=1, address=0x400000800, count=0x800)
+p.write_fifo(fifo=1, address=0x400001000, count=0x3200)
+p.write_fifo(fifo=0, address=0xF4BEEF0000, count=0x800)
+p.write_fifo(fifo=2, address=0xE3C0DE0000, count=0x800)
 # TPC
-p.write(0x00000200, 2*8)
-p.write(0x00000400, 26*8)
-p.write(0x600000000, 27*8)
-p.write(0x00000200, 2*8)
-p.write(0x600000200, 27*8)
-p.write(0x00003C00, 2*8)
-p.write(0x800000400, 27*8)
+p.write_fifo(fifo=5, address=0x600000000, count=0x200, interrupt = True)
+p.write_fifo(fifo=5, address=0x600000200, count=0x200, interrupt = True)
+p.write_fifo(fifo=5, address=0x800000400, count=0x3C00, interrupt = True)
 p.read(0*8, 1)
 p.read(1*8, 1)
 p.read(2*8, 1)
@@ -204,7 +200,7 @@ def _test_hififo():
     
     dut = hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid)
     
-    @always(delay(1))
+    @always(delay(2))
     def clockgen():
          clock.next = not clock
 
