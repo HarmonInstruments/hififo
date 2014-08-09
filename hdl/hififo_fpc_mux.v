@@ -42,7 +42,6 @@ module fpc_rr_mux
    parameter NBITS_TAG_LOW = 3;
    
    reg [3:0] 	     state;
-   wire [3:0] 	     o_req_valid;
    wire [54:0] 	     rr_addr[0:3];
    wire [3:0] 	     both_valid;
    reg [2:0] 	     rrm_tag_low;
@@ -54,19 +53,22 @@ module fpc_rr_mux
       for (i = 0; i < 4; i = i+1) begin: block_fill
 	 if((2**i & ENABLE) != 0)
 	   begin
-	      wire req_valid;
+	      reg req_valid;
+	      reg [54:0] o_addr;
+	      reg [12:0] o_count;
 	      assign both_valid[i] = req_valid & rr_valid[i];
 	      assign r_ready[i] = ~req_valid;
 	      assign rr_ready[i] = req_valid && (state == 4*i+3);
-	      request_count rcount
-		(.clock(clock),
-		 .reset(reset), 
-		 .i_valid(r_valid[i]),
-		 .i_addr(r_addr[60:6]),
-		 .i_count(r_count[18:6]), 
-		 .o_ready(state == 2 + 4*i),
-		 .o_valid(req_valid),
-		 .o_addr(rr_addr[i]));
+	      assign rr_addr[i] = o_addr;
+	      always @(posedge clock)
+		begin
+		   o_addr <= r_valid[i] ? r_addr[60:6] :
+			     o_addr + (state == 2 + 4*i);
+		   o_count <= reset ? 1'b0 :
+			      r_valid[i] ? r_count[18:6] :
+			      o_count - (state == 2 + 4*i);
+		   req_valid <= o_count != 0;
+		end
 	   end
 	 else
 	   begin
@@ -75,7 +77,6 @@ module fpc_rr_mux
 	      assign rr_ready[i] = 1'b0;
 	      assign rr_addr[i] = 1'b0;
 	   end
-
       end
    endgenerate
    
@@ -101,38 +102,4 @@ module fpc_rr_mux
 	     rrm_addr <= rr_addr[state[3:2]];
 	  end
    end
-endmodule
-
-module request_count
-  (
-   input 	     clock,
-   input 	     reset,
-   input 	     i_valid,
-   input [54:0]      i_addr,
-   input [12:0]      i_count,
-   input 	     o_ready,
-   output reg 	     o_valid,
-   output reg [54:0] o_addr);
-
-   reg [12:0] 	     o_count;
-      
-   always @(posedge clock)
-     begin
-	if(reset)
-	  begin
-	     o_addr <= 1'b0;
-	     o_count <= 1'b0;
-	  end
-	else if(i_valid)
-	  begin
-	     o_addr <= i_addr;
-	     o_count <= i_count;
-	  end
-	else if(o_ready)
-	  begin
-	     o_addr <= o_addr + 1'd1;
-	     o_count <= o_count - 1'b1;
-	  end
-	o_valid <= o_count != 0;
-     end
 endmodule
