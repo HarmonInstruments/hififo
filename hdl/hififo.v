@@ -173,7 +173,7 @@ module hififo_pcie
 	   begin
 	      assign fifo_data[i] = 0;
 	      assign rr_mux_valid[i] = 0;
-	      assign rr_mux_tag_low[((i+1)*NBITS_TAG_LOW+1)-1:i*NBITS_TAG_LOW] = 0;
+	      assign rr_mux_tag_low[((i+1)*NBITS_TAG_LOW)-1:i*NBITS_TAG_LOW] = 0;
 	   end
 	 // i = 4 to 7: TPC FIFO
 	 if((2**i & ENABLE & 8'hF0) != 0) 

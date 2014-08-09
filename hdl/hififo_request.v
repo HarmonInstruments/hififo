@@ -53,13 +53,15 @@ module hififo_request
 	      reg  read_b = 0;
 	      reg  read_c = 0;
 	      reg  read_d = 0;
+	      reg  reset_local;
 	      assign addr_in[i] = 64*i | p_in;
 	      assign addr_out[i] = 64*i | p_out;
 	      assign r_valid[i] = read_d;
 	      always @ (posedge clock)
 		begin
-		   p_in <= reset ? 1'b0 : p_in + (pio_wvalid && (pio_addr[5:4] == 1) && (pio_addr[3:0] == 2*i + 1));
-		   p_out <= reset ? 1'b0 : p_out + read_a;
+		   reset_local <= reset | (pio_wvalid && pio_wdata[0] && (pio_addr == 16 + 2*i));
+		   p_in <= reset_local ? 1'b0 : p_in + (pio_wvalid && (pio_addr[5:4] == 1) && (pio_addr[3:0] == 2*i + 1));
+		   p_out <= reset_local ? 1'b0 : p_out + read_a;
 		   read_b <= read_a;
 		   read_c <= read_b;
 		   read_d <= read_c;

@@ -57,7 +57,7 @@ module fpc_rr_mux
 	      wire req_valid;
 	      assign both_valid[i] = req_valid & rr_valid[i];
 	      assign r_ready[i] = ~req_valid;
-	      assign rr_ready[i] = req_valid && (state == 2*i+1);
+	      assign rr_ready[i] = req_valid && (state == 4*i+3);
 	      request_count rcount
 		(.clock(clock),
 		 .reset(reset), 
