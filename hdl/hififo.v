@@ -67,8 +67,7 @@ module hififo_pcie
    
    wire 	tx_rr_valid;
    wire 	tx_rr_ready;
-   wire [7:0] 	tx_rr_tag;
-   wire [54:0] 	tx_rr_addr;
+   wire [65:0] 	tx_rr_data;
 
    wire [3:0] 	rr_mux_valid;
    wire [3:0] 	rr_mux_ready;
@@ -257,6 +256,7 @@ module hififo_pcie
      (
       .clock(clock),
       .reset(pci_reset),
+      .pci_id(pci_id),
       // request unit
       .r_valid(r_valid[3:0]),
       .r_addr(r_addr),
@@ -268,8 +268,7 @@ module hififo_pcie
       .rr_tag_low(rr_mux_tag_low),
       // rr request multiplexed
       .rrm_valid(tx_rr_valid),
-      .rrm_addr(tx_rr_addr),
-      .rrm_tag(tx_rr_tag),
+      .rrm_data(tx_rr_data),
       .rrm_ready(tx_rr_ready)
      );
 
@@ -312,9 +311,8 @@ module hififo_pcie
       .rc_data(tx_rc_data),
       // read request (rr)
       .rr_valid(tx_rr_valid),
-      .rr_addr({tx_rr_addr,9'd0}),
+      .rr_data(tx_rr_data),
       .rr_ready(tx_rr_ready),
-      .rr_tag(tx_rr_tag),
       // write request (wr)
       .wr_valid(tx_wr_valid),
       .wr_ready(tx_wr_ready),

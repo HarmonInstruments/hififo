@@ -22,6 +22,7 @@ module fpc_rr_mux
   (
    input 		       clock,
    input 		       reset,
+   input [15:0] 	       pci_id,
    // from request unit
    input [3:0] 		       r_valid,
    input [60:0] 	       r_addr, // 8 bytes
@@ -33,8 +34,7 @@ module fpc_rr_mux
    input [4*NBITS_TAG_LOW-1:0] rr_tag_low,
    // rr request multiplexed
    output 		       rrm_valid,
-   output reg [54:0] 	       rrm_addr,
-   output [7:0] 	       rrm_tag,
+   output [65:0] 	       rrm_data,
    input 		       rrm_ready
    );
 
@@ -45,8 +45,8 @@ module fpc_rr_mux
    wire [54:0] 	     rr_addr[0:3];
    wire [3:0] 	     both_valid;
    reg [2:0] 	     rrm_tag_low;
-   assign rrm_tag = {2'b0, state[3:2], 1'b0, rrm_tag_low};
-   assign rrm_valid = state[1:0] == 3;
+   reg [54:0] 	     rrm_addr;
+   assign 	     rrm_valid = state[1:0] == 3;
    
    genvar 	     i;
    generate
@@ -99,5 +99,18 @@ module fpc_rr_mux
 	     endcase
 	     rrm_addr <= rr_addr[state[3:2]];
 	  end
-   end
+     end
+   
+   wire [7:0]  rrm_tag = {2'b0, state[3:2], 1'b0, rrm_tag_low};
+   wire [63:0] rrm_addr_s = {rrm_addr, 9'd0};
+   wire        rr_is_32 = rrm_addr_s[60:32] == 0;
+   wire [31:0] rr_dw0 = {2'd0, ~rr_is_32, 29'd128};
+   wire [31:0] rr_dw1 = {pci_id, rrm_tag[7:0], 8'hFF};
+   wire [31:0] rr_dw2 = rr_is_32 ? rrm_addr_s[31:0] : rrm_addr_s[63:32];
+   wire [31:0] rr_dw3 = rrm_addr_s[31:0];
+   wire        rr_last = rrm_ready;
+   reg [65:0]  rrm_next = 0;
+   assign rrm_data = rrm_next;
+   always @ (posedge clock)
+     rrm_next <= {rr_last & rr_is_32, rr_last, rr_last ? {rr_dw3, rr_dw2} : {rr_dw1, rr_dw0}};
 endmodule

@@ -29,8 +29,7 @@ module pcie_tx
    input [31:0]  rc_data,
    // read request (rr)
    input 	 rr_valid,
-   input [63:0]  rr_addr,
-   input [7:0] 	 rr_tag,
+   input [65:0]  rr_data,
    output 	 rr_ready,
    // write request (wr)
    input [3:0] 	 wr_valid,
@@ -55,11 +54,10 @@ module pcie_tx
    reg 		     rc_valid;
    wire 	     rc_ready;
    reg 		     rc_last;
-   
+      
    reg [2:0] 	     state = 0;
-   wire 	     rr_is_32 = rr_addr[63:32] == 0;
    assign rc_ready = rc_last;
-   assign rr_ready = (state == 3);
+   assign rr_ready = (state == 2);
    assign wr_ready[0] = (state == 4);
    assign wr_ready[1] = (state == 5);
    assign wr_ready[2] = (state == 6);
@@ -86,7 +84,7 @@ module pcie_tx
 	  state <= 5'd0;
 	else
 	  case(state)
-	    0: state <= ~fi_ready ? 3'd0 :
+	    default: state <= ~fi_ready ? 3'd0 :
 			valid[1] ? 3'd1 :
 			valid[2] ? 3'd2 :
 			valid[4] ? 3'd4 :
@@ -100,8 +98,8 @@ module pcie_tx
 			valid[5] ? 3'd5 :
 			valid[6] ? 3'd6 :
 			valid[7] ? 3'd7 : 3'd0;
-	    2: state <= 3'd3;
-	    3: state <= ~fi_ready ? 3'd0 :
+	    2: state <= ~rr_data[64] ? state:
+			~fi_ready ? 3'd0 :
 			valid[1] ? 3'd1 :
 			valid[4] ? 3'd4 :
 			valid[5] ? 3'd5 :
@@ -142,8 +140,8 @@ module pcie_tx
 	  // read completion (rc)
 	  1: fi_data <= {1'b0, rc_last, rc_last ? {es(rc_data), rc_dw2} : {pcie_id, 16'd8, 32'h4A000001}}; // always 1 DW
 	  // read request (rr)
-	  2: fi_data <= {2'b00, pcie_id, rr_tag[7:0], 8'hFF, 2'd0, ~rr_is_32, 29'd128}; // always 128 DW
-	  3: fi_data <= rr_is_32 ? {2'b11, rr_addr[31:0], rr_addr[31:0]} : {2'b01, rr_addr[31:0], rr_addr[63:32]};
+	  2: fi_data <= rr_data;
+	  3: fi_data <= 1'b0;
 	  // write request (wr)
 	  4: fi_data <= wr_data0;
 	  5: fi_data <= wr_data1;
