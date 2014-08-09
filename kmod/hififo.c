@@ -220,12 +220,12 @@ static ssize_t hififo_write(struct file *filp,
     retval = wait_ring_from_pc(fifo, copy_length);
     if(retval < copy_length){
       printk("wait from user failed\n");
-      return -1;
+      return count;
     }
     retval = copy_from_user(((void *) fifo->buffer) + fifo->pointer_in, buf + count, copy_length);
     if(retval != 0){
       printk("copy from user failed\n");
-      return -1;
+      return -EFAULT;
     }
     count += copy_length;
     write_count(copy_length);
