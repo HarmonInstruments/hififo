@@ -26,6 +26,7 @@ module hififo_tpc_fifo
    output [31:0]     status,
    // from request unit
    input 	     r_valid,
+   input 	     r_abort,
    input [60:0]      r_addr, // 8 bytes
    input [18:0]      r_count, // 8 bytes
    output 	     r_ready,
@@ -85,7 +86,7 @@ module hififo_tpc_fifo
 	if(wr_ready | (state != 0))
 	  begin
 	     wr_data[65:64] <= (state == 30) ? {is_32, 1'b1} : 2'b00;
-	     wr_data[63:0] <= is_32 ? {o_data[31:0], wr_data_next[31:0]} : wr_data_next;
+	     wr_data[63:0] <= is_32 ? {es(o_data[31:0]), wr_data_next[31:0]} : wr_data_next;
 	     wr_data_next <= is_32 ? es(o_data[63:32]) : {es(o_data[63:32]), es(o_data[31:0])};
 	  end
 	else

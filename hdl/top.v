@@ -80,7 +80,7 @@ module vna_dsp
    
    always @ (posedge clock)
      begin
-	count <= count + fifo_ready[6];
+	count <= fifo_reset[6] ? 1'b0 : count + fifo_ready[6];
 	count_write <= fifo_ready[6];
 	
 	if(fifo_ready[0])

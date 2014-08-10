@@ -22,76 +22,132 @@ module hififo_request
   (
    input 	 clock,
    input 	 reset,
-   // PIO for page table writes
+   input [15:0]  pci_id,
+   // PIO
    input 	 pio_wvalid,
    input [63:0]  pio_wdata,
    input [5:0] 	 pio_addr,
+   // read request to pcie_tx
+   output 	 rr_valid,
+   output [65:0] rr_data,
+   input 	 rr_ready,
+   // read completion
+   input 	 rc_valid,
+   input [7:0] 	 rc_tag,
+   input [5:0] 	 rc_index,
+   input [63:0]  rc_data,
    // from request unit
    output [7:0]  r_valid,
-   output [60:0] r_addr, // 8 bytes
+   output [7:0]  r_abort,
+   output [63:0] r_addr,
    output [18:0] r_count, // 8 bytes
    input [7:0] 	 r_ready
    );
    parameter ENABLE = 8'b00010001;
    
-   reg [8:0] 	 ram_addr;
-   
    reg [2:0] 	 state = 0;
    wire [5:0] 	 addr_in[0:7];
-   wire [8:0] 	 addr_out[0:7];
+   wire [5:0] 	 addr_out[0:7];
+   wire [63:0] 	 rr_addr[0:7];
+   reg [3:0] 	 rr_state = 0;
+   wire [7:0] 	 next_desc_request;
    
    genvar 	 i;
    generate
-      for (i = 0; i < 8; i = i+1) begin: block_fill
+      for (i = 0; i < 8; i = i+1) begin: fifo
 	 if((2**i & ENABLE) != 0)
-	   begin
-	      reg [5:0] p_in;
-	      reg [5:0] p_out;
+	   begin: enabled
+	      reg [54:0] next_desc_addr;
+	      reg 	 next_desc_valid, next_desc_requested;
+	      reg 	 abort;
+	      reg [5:0]  p_in;
+	      reg [5:0]  p_out;
+	      reg [2:0]  read_delay = 0;
+	      reg 	 reset_local;
 	      wire [5:0] count = p_in - p_out;
-	      wire read_a = (state == i) && r_ready[i] && (count != 0);
-	      reg  read_b = 0;
-	      reg  read_c = 0;
-	      reg  read_d = 0;
-	      reg  reset_local;
+	      wire 	 read_a = (state == i) && r_ready[i] && (count != 0);
+	      wire 	 write_addr = (pio_wvalid && (pio_addr == 16+2*i)) || (rc_valid && rc_tag[7] && (rc_tag[2:0] == i) && (rc_data[2:0] == 4));
+	      assign rr_addr[i] = {next_desc_addr, 9'd0};
 	      assign addr_in[i] = p_in;
-	      assign addr_out[i] = 64*i | p_out;
-	      assign r_valid[i] = read_d;
+	      assign addr_out[i] = p_out;
+	      assign r_valid[i] = read_delay[2];
+	      assign r_abort[i] = reset_local;
+	      assign next_desc_request[i] = (count < 32) && next_desc_valid && ~next_desc_requested;
 	      always @ (posedge clock)
 		begin
-		   reset_local <= reset | (pio_wvalid && pio_wdata[0] && (pio_addr == 16 + 2*i));
-		   p_in <= reset_local ? 1'b0 : p_in + (pio_wvalid && (pio_addr[5:4] == 1) && (pio_addr[3:0] == 2*i + 1));
+		   if(write_addr)
+		     next_desc_addr <= rc_data[63:9];
+		   if(reset)
+		     abort <= 1'b1;
+		   else if(pio_wvalid && (pio_addr == 16+2*i))
+		     abort <= pio_wdata[2:0] == 5;
+		   next_desc_valid <= reset ? 1'b0 : write_addr | (next_desc_valid & ~next_desc_requested);
+		   next_desc_requested <= reset ? 1'b0 :
+					  (rr_state == 2*i+1) ? 1'b1 :
+					  next_desc_requested & ~write_addr; // clear on rc data
+		   
+		   reset_local <= reset | abort;
+		   p_in <= reset_local ? 1'b0 : p_in + (rc_valid && rc_tag[7] && (rc_tag[2:0] == i) && (rc_data[2:0] == 2));
 		   p_out <= reset_local ? 1'b0 : p_out + read_a;
-		   read_b <= read_a;
-		   read_c <= read_b;
-		   read_d <= read_c;
+		   read_delay <= {read_delay[1:0], read_a};
 		end
 	   end
 	 else
 	   begin
-	      assign addr_out[i] = 1'b0;
-	      assign addr_in[i] = 1'b0;
-	      assign r_valid[i] = 1'b0;
+	      assign next_desc_request[i] = 0;
+	      assign rr_addr[i] = 0;
+	      assign addr_out[i] = 0;
+	      assign addr_in[i] = 0;
+	      assign r_valid[i] = 0;
+	      assign r_abort[i] = 1;
 	   end
       end
    endgenerate
    
-   reg [18:0] pio_high;
+   wire [7:0]  rr_tag = {4'h8, 1'b0, rr_state[3:1]};
+   wire [63:0] rr_addr_s = rr_addr[rr_state[3:1]];
+   wire        rr_is_32 = rr_addr_s[63:32] == 0;
+   wire [31:0] rr_dw0 = {2'd0, ~rr_is_32, 29'd128};
+   wire [31:0] rr_dw1 = {pci_id, rr_tag[7:0], 8'hFF};
+   wire [31:0] rr_dw2 = rr_is_32 ? rr_addr_s[31:0] : rr_addr_s[63:32];
+   wire [31:0] rr_dw3 = rr_addr_s[31:0];
+   reg [65:0]  rr_next = 0;
+   reg [8:0]   ram_addr;
    
+   assign rr_valid = rr_state[0];
+   assign rr_data = rr_next;
+      
    always @ (posedge clock)
      begin
+	if(reset)
+	  rr_state <= 1'b0;
+	else if(rr_state[0])
+	  rr_state <= rr_state + rr_ready;
+	else
+	  rr_state <= rr_state + (next_desc_request[rr_state[3:1]] ?  3'd1 : 3'd2);
+	rr_next <= {rr_ready & rr_is_32, rr_ready, rr_ready ? {rr_dw3, rr_dw2} : {rr_dw1, rr_dw0}};
 	state <= state + 1'b1;
-        if(pio_wvalid & (pio_addr == 2))
-	  pio_high <= pio_wdata[21:3];
-	ram_addr <= addr_out[state];
+	ram_addr <= {state, addr_out[state]};
      end
    
-   block_ram #(.DBITS(80), .ABITS(9)) bram_req
+   block_ram #(.DBITS(19), .ABITS(9)) bram_count
      (.clock(clock),
-      .w_data({pio_high, pio_wdata[63:3]}),
-      .w_valid(pio_wvalid && (pio_addr[5:4] == 1) && pio_addr[0]),
-      .w_addr({pio_addr[3:1], addr_in[pio_addr[3:1]]}),
-      .r_data({r_count,r_addr}),
+      .w_data(rc_data[21:3]),
+      .w_valid(rc_valid && rc_tag[7] && (rc_data[2:0] == 1)),
+      .w_addr({rc_tag[2:0], addr_in[rc_tag[2:0]]}),
+      .r_data(r_count),
       .r_addr(ram_addr)
       );
-   
+
+   block_ram #(.DBITS(61), .ABITS(9)) bram_addr
+     (.clock(clock),
+      .w_data(rc_data[63:3]),
+      .w_valid(rc_valid && rc_tag[7] && (rc_data[2:0] == 2)),
+      .w_addr({rc_tag[2:0], addr_in[rc_tag[2:0]]}),
+      .r_data(r_addr[63:3]),
+      .r_addr(ram_addr)
+      );
+
+   assign r_addr[2:0] = 0;
+      
 endmodule

@@ -37,10 +37,9 @@ class PCIe_host():
         self.rxdata = []
         self.requested = 0
         self.txqueue = Queue.Queue()
-        self.completion_data = np.zeros(16*1048576, dtype = 'uint64')
+        self.completion_data = np.zeros(1048576, dtype = 'uint64')
         self.write_data = np.zeros(16*1048576, dtype = 'uint64')
         self.write_data_expected = np.zeros(16*1048576, dtype = 'uint64')
-        self.complete_addr = 0
         self.errors = 0
     def write(self, data, address):
         self.txqueue.put([0xbeef00ff40000002, 0])
@@ -51,14 +50,15 @@ class PCIe_host():
         self.txqueue.put([address, 1])
         self.read_outstanding = 1
     def complete(self, address, reqid_tag):
+        address &= 0xFFFF8
+        address = address >> 3
         complete_size = random.choice([8,16]) # QW
         for i in range(64/complete_size):
             self.txqueue.put([0xbeef00004A000000 | complete_size | ((512-complete_size*8*i) << 32), 0]) # 8 DW
-            self.txqueue.put([combine2dw((reqid_tag << 8) | ((i & 1) << 6), endianswap(self.completion_data[self.complete_addr])), 0])
+            self.txqueue.put([combine2dw((reqid_tag << 8) | ((i & 1) << 6), endianswap(self.completion_data[address])), 0])
             for j in range(complete_size):
-                if (reqid_tag & 0xF0) == 0x10:
-                    self.complete_addr += 1
-                self.txqueue.put([combine2dw(endianswap(int(self.completion_data[self.complete_addr-1])>>32), endianswap(self.completion_data[self.complete_addr])), j==(complete_size - 1)])
+                address += 1
+                self.txqueue.put([combine2dw(endianswap(int(self.completion_data[address-1])>>32), endianswap(self.completion_data[address])), j==(complete_size - 1)])
         
     def do_read(self, address):
         self.txqueue.put(["read", address])
@@ -138,11 +138,8 @@ class PCIe_host():
                 d = combine2dw(endianswap(rxdata[2+i]), endianswap(rxdata[2+i] >> 32))
             self.write_data[address/8 + i & 0xFFFFFF] = d
             print "d[{}] = 0x{:016X}".format(i, d)
-    def write_fifo(self, fifo, address, count, interrupt=False):
-        self.write(count, 2*8)
-        if interrupt:
-            self.write(count, (16+2*fifo)*8)
-        self.write(address, (17+2*fifo)*8)
+    def write_fifo(self, fifo, address):
+        self.write(address | 4, (16+2*fifo)*8)
 
 def seq_wait(x):
     return 1<<60 | x
@@ -155,26 +152,34 @@ p.write(0xF, 0*8)
 # release reset
 p.write(0xFF, 4*8)
 #FPC
-p.write_fifo(fifo=1, address=0x0, count=0x800, interrupt=True)
-p.write_fifo(fifo=1, address=0x400000800, count=0x800)
-p.write_fifo(fifo=1, address=0x400001000, count=0x3200)
-p.write_fifo(fifo=0, address=0xF4BEEF0000, count=0x800)
-p.write_fifo(fifo=2, address=0xE3C0DE0000, count=0x800)
+for i in range(64*32):
+    p.completion_data[0x1000/8+i] = i | 0xDEADBEEF00000000
+    p.write_data_expected[0x1000/8+i] = i | 0xDEADBEEF00000000
+p.completion_data[0] = 1 | 0x200
+p.completion_data[1] = 2 | 0x1000
+p.completion_data[2] = 1 | 0x200
+p.completion_data[3] = 2 | 0x1200
+p.completion_data[4] = 4 | 0x200
+p.completion_data[64] = 1 | 0x3C00
+p.completion_data[65] = 2 | 0x1400 | 0x100000000
+p.write_fifo(fifo=0, address=0x0)
+
 # TPC
-p.write_fifo(fifo=5, address=0x600000000, count=0x200, interrupt = True)
-p.write_fifo(fifo=5, address=0x600000200, count=0x200, interrupt = True)
-p.write_fifo(fifo=5, address=0x800000400, count=0x3C00, interrupt = True)
+p.completion_data[128] = 1 | 0x400
+p.completion_data[129] = 2 | 0x1000
+p.completion_data[130] = 1 | 0x3C00
+p.completion_data[131] = 2 | 0x1400
+p.write_fifo(fifo=4, address=0x400)
+for i in range(0x8000/8):
+    p.write_data_expected[0x10000/8+i] = i
+p.completion_data[256] = 1 | 0x4000
+p.completion_data[257] = 2 | 0x10000
+p.completion_data[258] = 1 | 0x4000
+p.completion_data[259] = 2 | 0x14000
+p.write_fifo(fifo=6, address=0x800)
 p.read(0*8, 1)
 p.read(1*8, 1)
 p.read(2*8, 1)
-p.completion_data[0] = seq_wait(64)
-p.completion_data[1] = seq_wait(64)
-p.completion_data[3] = seq_wait(1)
-p.completion_data[5] = seq_wait(0)
-p.completion_data[8] = seq_put(64*32)
-for i in range(64*32):
-    p.completion_data[9+i] = i | 0xDEADBEEF00000000
-    p.write_data_expected[i] = i | 0xDEADBEEF00000000
     
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid):
     r = os.system ("iverilog -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v ../hififo_request.v ../hififo_interrupt.v ../top.v")

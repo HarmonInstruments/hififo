@@ -25,6 +25,7 @@ module fpc_rr_mux
    input [15:0] 	       pci_id,
    // from request unit
    input [3:0] 		       r_valid,
+   input [3:0] 		       r_abort,
    input [60:0] 	       r_addr, // 8 bytes
    input [18:0] 	       r_count, // 8 bytes
    output [3:0] 	       r_ready,
@@ -70,10 +71,10 @@ module fpc_rr_mux
 	   end
 	 else
 	   begin
-	      assign r_ready[i] = 1'b0;
-	      assign both_valid[i] = 1'b0;
-	      assign rr_ready[i] = 1'b0;
-	      assign rr_addr[i] = 1'b0;
+	      assign r_ready[i] = 0;
+	      assign both_valid[i] = 0;
+	      assign rr_ready[i] = 0;
+	      assign rr_addr[i] = 0;
 	   end
       end
    endgenerate
@@ -103,7 +104,7 @@ module fpc_rr_mux
    
    wire [7:0]  rrm_tag = {2'b0, state[3:2], 1'b0, rrm_tag_low};
    wire [63:0] rrm_addr_s = {rrm_addr, 9'd0};
-   wire        rr_is_32 = rrm_addr_s[60:32] == 0;
+   wire        rr_is_32 = rrm_addr_s[63:32] == 0;
    wire [31:0] rr_dw0 = {2'd0, ~rr_is_32, 29'd128};
    wire [31:0] rr_dw1 = {pci_id, rrm_tag[7:0], 8'hFF};
    wire [31:0] rr_dw2 = rr_is_32 ? rrm_addr_s[31:0] : rrm_addr_s[63:32];

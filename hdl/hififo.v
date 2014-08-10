@@ -69,6 +69,10 @@ module hififo_pcie
    wire 	tx_rr_ready;
    wire [65:0] 	tx_rr_data;
 
+   wire 	request_rr_valid;
+   wire 	request_rr_ready;
+   wire [65:0] 	request_rr_data;
+
    wire [3:0] 	rr_mux_valid;
    wire [3:0] 	rr_mux_ready;
    wire [(4*NBITS_TAG_LOW)-1:0] rr_mux_tag_low;
@@ -77,10 +81,9 @@ module hififo_pcie
    wire [3:0] 	tx_wr_ready;
    wire [65:0] 	tx_wr_data[0:3];
 
-   wire [7:0] 	r_valid;
-   wire [60:0] 	r_addr;
+   wire [7:0] 	r_valid, r_ready, r_abort;
+   wire [63:0] 	r_addr;
    wire [18:0] 	r_count;
-   wire [7:0] 	r_ready;
       
    wire [31:0] 	status[0:7];
 
@@ -193,7 +196,8 @@ module hififo_pcie
 		 .status(status[i]),
 		 // request unit
 		 .r_valid(r_valid[i]),
-		 .r_addr(r_addr),
+		 .r_abort(r_abort[i]),
+		 .r_addr(r_addr[63:3]),
 		 .r_count(r_count),
 		 .r_ready(r_ready[i]),
 		 // write request to TX
@@ -241,12 +245,23 @@ module hififo_pcie
      (
       .clock(clock),
       .reset(pci_reset),
+      .pci_id(pci_id),
       // PIO
       .pio_wvalid(rx_wr_valid),
       .pio_wdata(rx_data),
       .pio_addr(rx_address),
+      // read request
+      .rr_valid(request_rr_valid),
+      .rr_ready(request_rr_ready),
+      .rr_data(request_rr_data),
+      // read completion
+      .rc_valid(rx_rc_valid),
+      .rc_tag(rx_rc_tag),
+      .rc_index(rx_rc_index),
+      .rc_data(rx_data),
       // request unit
       .r_valid(r_valid),
+      .r_abort(r_abort),
       .r_addr(r_addr),
       .r_count(r_count),
       .r_ready(r_ready)
@@ -259,7 +274,8 @@ module hififo_pcie
       .pci_id(pci_id),
       // request unit
       .r_valid(r_valid[3:0]),
-      .r_addr(r_addr),
+      .r_abort(r_abort[3:0]),
+      .r_addr(r_addr[63:3]),
       .r_count(r_count),
       .r_ready(r_ready[3:0]),
       // read request in
@@ -310,9 +326,10 @@ module hififo_pcie
       .rc_dw2(tx_rc_dw2),
       .rc_data(tx_rc_data),
       // read request (rr)
-      .rr_valid(tx_rr_valid),
-      .rr_data(tx_rr_data),
-      .rr_ready(tx_rr_ready),
+      .rr_valid({request_rr_valid, tx_rr_valid}),
+      .rr_ready({request_rr_ready, tx_rr_ready}),
+      .rr_data_0(tx_rr_data),
+      .rr_data_1(request_rr_data),
       // write request (wr)
       .wr_valid(tx_wr_valid),
       .wr_ready(tx_wr_ready),
