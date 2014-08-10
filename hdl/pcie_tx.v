@@ -28,9 +28,10 @@ module pcie_tx
    input [31:0]  rc_dw2,
    input [31:0]  rc_data,
    // read request (rr)
-   input 	 rr_valid,
-   input [65:0]  rr_data,
-   output 	 rr_ready,
+   input [1:0] 	 rr_valid,
+   output [1:0]  rr_ready,
+   input [65:0]  rr_data_0,
+   input [65:0]  rr_data_1,
    // write request (wr)
    input [3:0] 	 wr_valid,
    output [3:0]  wr_ready, // pulses 16 times in request of the next data value
@@ -57,7 +58,8 @@ module pcie_tx
       
    reg [2:0] 	     state = 0;
    assign rc_ready = rc_last;
-   assign rr_ready = (state == 2);
+   assign rr_ready[0] = (state == 2);
+   assign rr_ready[1] = (state == 3);
    assign wr_ready[0] = (state == 4);
    assign wr_ready[1] = (state == 5);
    assign wr_ready[2] = (state == 6);
@@ -65,15 +67,21 @@ module pcie_tx
    wire 	     fi_ready;
    reg [65:0] 	     fi_data;
    reg 		     fi_valid = 0;
+   reg [2:0] 	     state_next = 0;
    wire [7:0] 	     valid;
    assign valid[0] = 0;
    assign valid[1] = rc_valid;
-   assign valid[2] = rr_valid;
-   assign valid[3] = 0;
+   assign valid[3:2] = rr_valid;
    assign valid[7:4] = wr_valid;
 
    always @(posedge clock)
      begin
+	if(reset)
+	  state_next <= 1'b0;
+	else if(~valid[state_next])
+	  state_next <= state_next + 1'b1;
+	else if(state == state_next)
+	  state_next <= state_next + 1'b1;
 	if(reset)
 	  rc_valid <= 1'b0;
 	else if(rc_done)
@@ -84,55 +92,29 @@ module pcie_tx
 	  state <= 5'd0;
 	else
 	  case(state)
-	    default: state <= ~fi_ready ? 3'd0 :
-			valid[1] ? 3'd1 :
-			valid[2] ? 3'd2 :
-			valid[4] ? 3'd4 :
-			valid[5] ? 3'd5 :
-			valid[6] ? 3'd6 :
-			valid[7] ? 3'd7 : 3'd0;
+	    0: state <= ~fi_ready ? 3'd0 : 
+			valid[state_next] ? state_next : 3'd0;
 	    1: state <= ~rc_last ? state :
 			~fi_ready ? 3'd0 :
-			valid[2] ? 3'd2 :
-			valid[4] ? 3'd4 :
-			valid[5] ? 3'd5 :
-			valid[6] ? 3'd6 :
-			valid[7] ? 3'd7 : 3'd0;
-	    2: state <= ~rr_data[64] ? state:
+			valid[state_next] ? state_next : 3'd0;
+	    2: state <= ~rr_data_0[64] ? state:
 			~fi_ready ? 3'd0 :
-			valid[1] ? 3'd1 :
-			valid[4] ? 3'd4 :
-			valid[5] ? 3'd5 :
-			valid[6] ? 3'd6 :
-			valid[7] ? 3'd7 : 3'd0;
+			valid[state_next] ? state_next : 3'd0;
+	    3: state <= ~rr_data_1[64] ? state:
+			~fi_ready ? 3'd0 :
+			valid[state_next] ? state_next : 3'd0;
 	    4: state <= ~wr_data0[64] ? state : 
 			~fi_ready ? 3'd0 :
-			valid[1] ? 3'd1 :
-			valid[2] ? 3'd2 :
-			valid[5] ? 3'd5 :
-			valid[6] ? 3'd6 :
-			valid[7] ? 3'd7 : 3'd0;
+			valid[state_next] ? state_next : 3'd0;
 	    5: state <= ~wr_data1[64] ? state : 
 			~fi_ready ? 3'd0 :
-			valid[1] ? 3'd1 :
-			valid[2] ? 3'd2 :
-			valid[4] ? 3'd4 :
-			valid[6] ? 3'd6 :
-			valid[7] ? 3'd7 : 3'd0;
+			valid[state_next] ? state_next : 3'd0;
 	    6: state <= ~wr_data2[64] ? state : 
 			~fi_ready ? 3'd0 :
-			valid[1] ? 3'd1 :
-			valid[2] ? 3'd2 :
-			valid[4] ? 3'd4 :
-			valid[5] ? 3'd5 :
-			valid[7] ? 3'd7 : 3'd0;
+			valid[state_next] ? state_next : 3'd0;
 	    7: state <= ~wr_data3[64] ? state : 
 			~fi_ready ? 3'd0 :
-			valid[1] ? 3'd1 :
-			valid[2] ? 3'd2 :
-			valid[4] ? 3'd4 :
-			valid[5] ? 3'd5 :
-			valid[6] ? 3'd6 : 3'd0;
+			valid[state_next] ? state_next : 3'd0;
 	  endcase
 	fi_valid <= state != 0;
 	rc_last <= (state == 1) && ~rc_last;
@@ -140,8 +122,8 @@ module pcie_tx
 	  // read completion (rc)
 	  1: fi_data <= {1'b0, rc_last, rc_last ? {es(rc_data), rc_dw2} : {pcie_id, 16'd8, 32'h4A000001}}; // always 1 DW
 	  // read request (rr)
-	  2: fi_data <= rr_data;
-	  3: fi_data <= 1'b0;
+	  2: fi_data <= rr_data_0;
+	  3: fi_data <= rr_data_1;
 	  // write request (wr)
 	  4: fi_data <= wr_data0;
 	  5: fi_data <= wr_data1;
