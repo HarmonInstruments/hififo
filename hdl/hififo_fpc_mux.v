@@ -64,7 +64,7 @@ module fpc_rr_mux
 	      always @(posedge clock)
 		begin
 		   addr <= r_valid[i] ? r_addr[60:6] : addr + (state == 2 + 4*i);
-		   count <= reset ? 1'b0 :
+		   count <= (reset | r_abort[i]) ? 1'b0 :
 			    r_valid[i] ? r_count[18:6] : count - (state == 2 + 4*i);
 		   req_valid <= count != 0;
 		end

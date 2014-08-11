@@ -66,7 +66,7 @@ module hififo_tpc_fifo
    always @ (posedge clock)
      begin
 	byte_count <= reset ? 1'b0 : byte_count + o_read;
-	if(reset)
+	if(reset | r_abort)
 	  count <= 1'b0;
 	else if(r_valid)
 	  count <= r_count;
