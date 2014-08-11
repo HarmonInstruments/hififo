@@ -23,6 +23,8 @@ module hififo_request
    input 	 clock,
    input 	 reset,
    input [15:0]  pci_id,
+   output [7:0]  interrupt,
+   output [7:0]  status,
    // PIO
    input 	 pio_wvalid,
    input [63:0]  pio_wdata,
@@ -64,15 +66,19 @@ module hififo_request
 	      reg [5:0]  p_out;
 	      reg [2:0]  read_delay = 0;
 	      reg 	 reset_local;
+	      reg 	 desc_ready, desc_ready_prev;
 	      wire [5:0] count = p_in - p_out;
 	      wire 	 read_a = (state == i) && r_ready[i] && (count != 0);
 	      wire 	 write_addr = (pio_wvalid && (pio_addr == 16+2*i)) || (rc_valid && rc_tag[7] && (rc_tag[2:0] == i) && (rc_data[2:0] == 4));
+	      wire 	 rc_last = (rc_valid && rc_tag[7] && (rc_tag[2:0] == i) && (rc_index[5:0] == 63));
 	      assign rr_addr[i] = {next_desc_addr, 9'd0};
 	      assign addr_in[i] = p_in;
 	      assign addr_out[i] = p_out;
 	      assign r_valid[i] = read_delay[2];
 	      assign r_abort[i] = reset_local;
 	      assign next_desc_request[i] = (count < 32) && next_desc_valid && ~next_desc_requested;
+	      assign status[i] = desc_ready;
+	      assign interrupt[i] = desc_ready & ~desc_ready_prev;
 	      always @ (posedge clock)
 		begin
 		   if(write_addr)
@@ -81,11 +87,11 @@ module hififo_request
 		     abort <= 1'b1;
 		   else if(pio_wvalid && (pio_addr == 16+2*i))
 		     abort <= pio_wdata[2:0] == 5;
+		   desc_ready <= ~next_desc_valid & ~next_desc_requested;
+		   desc_ready_prev <= desc_ready;
 		   next_desc_valid <= reset ? 1'b0 : write_addr | (next_desc_valid & ~next_desc_requested);
-		   next_desc_requested <= reset ? 1'b0 :
-					  (rr_state == 2*i+1) ? 1'b1 :
-					  next_desc_requested & ~write_addr; // clear on rc data
-		   
+		   next_desc_requested <= (reset | write_addr | rc_last) ? 1'b0 :
+					  (rr_state == 2*i+1) ? 1'b1 : next_desc_requested;
 		   reset_local <= reset | abort;
 		   p_in <= reset_local ? 1'b0 : p_in + (rc_valid && rc_tag[7] && (rc_tag[2:0] == i) && (rc_data[2:0] == 2));
 		   p_out <= reset_local ? 1'b0 : p_out + read_a;
@@ -100,6 +106,8 @@ module hififo_request
 	      assign addr_in[i] = 0;
 	      assign r_valid[i] = 0;
 	      assign r_abort[i] = 1;
+	      assign status[i] = 0;
+	      assign interrupt[i] = 0;
 	   end
       end
    endgenerate

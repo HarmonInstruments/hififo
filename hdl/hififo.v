@@ -32,7 +32,7 @@ module hififo_pcie
    output 	    clock,
    // FIFOs
    input [7:0] 	    fifo_clock,
-   output [7:0]      fifo_reset,
+   output [7:0]     fifo_reset,
    input [7:0] 	    fifo_rw,
    output [7:0]     fifo_ready,
    output [63:0]    fifo_data_0,
@@ -90,8 +90,8 @@ module hififo_pcie
    // interrupts
    reg 		interrupt;
    wire 	interrupt_rdy;
-   wire [7:0] 	interrupt_status;
-   wire [7:0] 	interrupt_individual;
+   wire [15:0] 	interrupt_status;
+   wire [15:0] 	interrupt_individual;
    
    wire [63:0] 	fifo_data[0:7];
 
@@ -246,6 +246,8 @@ module hififo_pcie
       .clock(clock),
       .reset(pci_reset),
       .pci_id(pci_id),
+      .interrupt(interrupt_individual[15:8]),
+      .status(interrupt_status[15:8]),
       // PIO
       .pio_wvalid(rx_wr_valid),
       .pio_wdata(rx_data),
