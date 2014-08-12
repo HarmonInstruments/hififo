@@ -55,15 +55,19 @@ module hififo_pcie
    wire 	rx_rc_valid;
    wire [5:0] 	rx_rc_index;
    wire [7:0] 	rx_rc_tag;
-   wire 	rx_rr_valid;
    wire 	rx_wr_valid;
+   wire 	rx_rr_valid;
+   wire [23:0] 	rx_rr_rid_tag;
+   wire [7:0] 	rx_rr_addr;
+   reg 		rx_rr_ready;
    wire [63:0] 	rx_data;
    wire [5:0] 	rx_address;
 
    // read completion request to TX module
-   wire [31:0] 	tx_rc_dw2;
+   wire [31:0]	tx_rc_dw2 = {rx_rr_rid_tag, 1'b0, rx_rr_addr[4:0], 2'd0};
    reg [31:0] 	tx_rc_data;
-   reg 		tx_rc_done = 0;
+   reg 		tx_rc_valid = 0;
+   wire 	tx_rc_ready;
    
    wire 	tx_rr_valid;
    wire 	tx_rr_ready;
@@ -106,8 +110,12 @@ module hififo_pcie
    assign fifo_data[6] = fifo_data_6;
    assign fifo_data[7] = fifo_data_7;
 
+   reg [1:0] 	read = 0;
+   reg 		read_in_progress = 0;
+      
    always @ (posedge clock)
      begin
+
 	interrupt <= (interrupt_individual != 0) | (interrupt & ~interrupt_rdy & ~pci_reset);
 	if(pci_reset)
 	  fifo_reset_sysclock <= 8'hFF;
@@ -116,8 +124,20 @@ module hififo_pcie
 	    3: fifo_reset_sysclock <= fifo_reset_sysclock | rx_data[7:0]; // set
 	    4: fifo_reset_sysclock <= fifo_reset_sysclock & ~rx_data[7:0]; // clear
 	  endcase
-	if(rx_rr_valid)
-	  case(rx_address)
+	if(tx_rc_ready)
+	  read_in_progress <= 1'b0;
+	else if(rx_rr_valid & ~rx_rr_ready)
+	  read_in_progress <= 1'b1;
+	rx_rr_ready <= tx_rc_ready;
+	read[0] <= rx_rr_valid & ~read_in_progress & ~rx_rr_ready;
+	read[1] <= read[0];
+	if(tx_rc_ready)
+	  tx_rc_valid <= 1'b0;
+	else if(read[1])
+	  tx_rc_valid <= 1'b1;
+	
+	if(read[1])
+	  case(rx_rr_addr[7:1])
 	    0:  tx_rc_data <= interrupt_status;
 	    1:  tx_rc_data <= ENABLE;
 	    3:  tx_rc_data <= fifo_reset_sysclock;
@@ -132,7 +152,6 @@ module hififo_pcie
 	    30: tx_rc_data <= status[7];
 	    default: tx_rc_data <= 1'b0;
 	  endcase
-	tx_rc_done <= rx_rr_valid;
      end
    
    genvar i;
@@ -147,7 +166,7 @@ module hififo_pcie
 		 .write(rx_wr_valid && (rx_address == (16 + 2*i))),
 		 .wdata(rx_data[31:0]),
 		 .count(status[i]),
-		 .read(rx_rr_valid && (rx_address == 0)),
+		 .read(read[1] && (rx_rr_addr == 0)),
 		 .out(interrupt_individual[i]),
 		 .status(interrupt_status[i]));
 	      pcie_from_pc_fifo fpc_fifo
@@ -186,7 +205,7 @@ module hififo_pcie
 		 .write(rx_wr_valid && (rx_address == (16 + 2*i))),
 		 .wdata(rx_data[31:0]),
 		 .count(status[i]),
-		 .read(rx_rr_valid && (rx_address == 0)),
+		 .read(read[1] && (rx_rr_addr == 0)),
 		 .out(interrupt_individual[i]),
 		 .status(interrupt_status[i]));
 	      hififo_tpc_fifo tpc_fifo
@@ -306,13 +325,15 @@ module hififo_pcie
       .reset(pci_reset),
       // outputs
       .write_valid(rx_wr_valid),
-      .read_valid(rx_rr_valid),
       .completion_valid(rx_rc_valid),
       .completion_index(rx_rc_index),
       .completion_tag(rx_rc_tag),
       .data(rx_data),
       .address(rx_address),
-      .rr_rc_dw2(tx_rc_dw2),
+      .rr_valid(rx_rr_valid),
+      .rr_ready(rx_rr_ready),
+      .rr_rid_tag(rx_rr_rid_tag),
+      .rr_addr(rx_rr_addr),
       // AXI stream from PCIE core
       .tvalid(m_axis_rx_tvalid),
       .tlast(m_axis_rx_tlast),
@@ -324,7 +345,8 @@ module hififo_pcie
       .reset(pci_reset),
       .pcie_id(pci_id),
       // read completion (rc)
-      .rc_done(tx_rc_done),
+      .rc_valid(tx_rc_valid),
+      .rc_ready(tx_rc_ready),
       .rc_dw2(tx_rc_dw2),
       .rc_data(tx_rc_data),
       // read request (rr)

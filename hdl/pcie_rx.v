@@ -24,13 +24,15 @@ module pcie_rx
    input 	     reset,
    // outputs
    output reg 	     write_valid = 0,
-   output reg 	     read_valid = 0,
    output reg 	     completion_valid = 0,
    output reg [5:0]  completion_index = 0,
    output [7:0]      completion_tag,
    output reg [63:0] data = 0,
    output [5:0]      address,
-   output [31:0]     rr_rc_dw2,
+   output [23:0]     rr_rid_tag,
+   output [7:0]      rr_addr,
+   output 	     rr_valid,
+   input 	     rr_ready,
    // AXI stream from PCIE core
    input 	     tvalid,
    input 	     tlast,
@@ -56,11 +58,9 @@ module pcie_rx
    reg 		     is_write_32 = 0;
    reg 		     is_cpld = 0;
    reg 		     is_read_32_1dw = 0;
-   reg [23:0] 	     rid_tag = 0;
-   reg [3:0] 	     rr_rc_lower_addr = 0;
-   assign rr_rc_dw2 = {rid_tag, 1'b0, rr_rc_lower_addr, 3'd0};
    
-   // receive
+   //assign rr_rc_dw2 = {rid_tag, 1'b0, rr_rc_lower_addr, 3'd0};
+   
    always @ (posedge clock)
      begin
 	tvalid_q <= tvalid;
@@ -75,17 +75,11 @@ module pcie_rx
 		  is_write_32 <= tdata_q[30:24] == 7'b1000000;
 		  is_cpld <= tdata_q[30:24] == 7'b1001010;
 		  is_read_32_1dw <= (tdata_q[30:24] == 7'b0000000) && (tdata_q[9:0] == 10'd1);
-		  if(tdata_q[30:24] == 7'b0000000)
-		    rid_tag <= tdata_q[63:40];
 	       end
 	     if(wait_dw23)
-	       begin
-		  address_q <= tdata_q[15:3];
-		  if(is_read_32_1dw)
-		    rr_rc_lower_addr <= tdata_q[6:3];
-	       end
+	       address_q <= tdata_q[15:3];
 	     if(wait_dw01)
-	       completion_index <= 6'h3F - {tdata_q[40:38],3'd0};
+	       completion_index <= 6'h3F - {tdata_q[40:38],3'd0};	       
 	     else if(wait_dw45)
 	       completion_index <= completion_index + 1'b1;
 	  end
@@ -96,7 +90,21 @@ module pcie_rx
 	else if(tvalid_q && wait_dw23)
 	  {wait_dw45, wait_dw23, wait_dw01} <= 3'b100;
 	write_valid <= is_write_32 && wait_dw45 && tvalid_q;
-	read_valid <= is_read_32_1dw && wait_dw23 && tvalid_q;
 	completion_valid <= is_cpld && wait_dw45 && tvalid_q;
      end
+   
+   fwft_fifo #(.NBITS(32)) read_fifo
+     (
+      .reset(reset),
+      .i_clock(clock),
+      .i_data({previous_dw[31:8], tdata_q[9:2]}), // RID (16), tag (8), addr[9:2]
+      .i_valid(is_read_32_1dw && wait_dw23 && tvalid_q),
+      .i_ready(),
+      .o_clock(clock),
+      .o_read(rr_ready),
+      .o_data({rr_rid_tag, rr_addr}),
+      .o_valid(rr_valid),
+      .o_almost_empty()
+      );  
+   
 endmodule
