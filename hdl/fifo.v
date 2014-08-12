@@ -37,7 +37,7 @@ module fwft_fifo
    );
    
    parameter NBITS = 64; // 1 to 72 valid
-
+   
 `ifdef SIM
    // this is for simulation only!!!
    reg [NBITS-1:0]    fifo[0:511];
@@ -77,32 +77,65 @@ module fwft_fifo
    wire empty, almostfull;
    assign i_ready = ~almostfull;
    assign o_valid = ~empty;
-   FIFO_DUALCLOCK_MACRO  
-     #(
-       .ALMOST_EMPTY_OFFSET(9'h00F),
-       .ALMOST_FULL_OFFSET(9'h080),
-       .DATA_WIDTH(NBITS),
-       .DEVICE("7SERIES"),
-       .FIFO_SIZE ("36Kb"),
-       .FIRST_WORD_FALL_THROUGH ("TRUE")
-       ) 
-   FIFO_DUALCLOCK_MACRO_inst 
-     (
-      .ALMOSTEMPTY(o_almost_empty),
-      .ALMOSTFULL(almostfull),
-      .DO(o_data),
-      .EMPTY(empty),
-      .FULL(),
-      .RDCOUNT(),
-      .RDERR(),
-      .WRCOUNT(),
-      .WRERR(),
-      .DI(i_data),
-      .RDCLK(o_clock),
-      .RDEN(o_read),
-      .RST(reset),
-      .WRCLK(i_clock),
-      .WREN(i_valid)
-      );
+   generate
+      if(NBITS>36) begin : fifo_36
+	 FIFO_DUALCLOCK_MACRO
+	   #(
+	     .ALMOST_EMPTY_OFFSET(9'h00F),
+	     .ALMOST_FULL_OFFSET(9'h080),
+	     .DATA_WIDTH(NBITS),
+	     .DEVICE("7SERIES"),
+	     .FIFO_SIZE ("36Kb"),
+	     .FIRST_WORD_FALL_THROUGH ("TRUE")
+	     ) 
+	 FIFO_DUALCLOCK_MACRO_inst 
+	   (
+	    .ALMOSTEMPTY(o_almost_empty),
+	    .ALMOSTFULL(almostfull),
+	    .DO(o_data),
+	    .EMPTY(empty),
+	    .FULL(),
+	    .RDCOUNT(),
+	    .RDERR(),
+	    .WRCOUNT(),
+	    .WRERR(),
+	    .DI(i_data),
+	    .RDCLK(o_clock),
+	    .RDEN(o_read),
+	    .RST(reset),
+	    .WRCLK(i_clock),
+	    .WREN(i_valid)
+	    );
+      end
+      else begin : fifo_18
+	 FIFO_DUALCLOCK_MACRO  
+	   #(
+	     .ALMOST_EMPTY_OFFSET(9'h00F),
+	     .ALMOST_FULL_OFFSET(9'h080),
+	     .DATA_WIDTH(NBITS),
+	     .DEVICE("7SERIES"),
+	     .FIFO_SIZE ("18Kb"),
+	     .FIRST_WORD_FALL_THROUGH ("TRUE")
+	     ) 
+	 FIFO_DUALCLOCK_MACRO_inst 
+	   (
+	    .ALMOSTEMPTY(o_almost_empty),
+	    .ALMOSTFULL(almostfull),
+	    .DO(o_data),
+	    .EMPTY(empty),
+	    .FULL(),
+	    .RDCOUNT(),
+	    .RDERR(),
+	    .WRCOUNT(),
+	    .WRERR(),
+	    .DI(i_data),
+	    .RDCLK(o_clock),
+	    .RDEN(o_read),
+	    .RST(reset),
+	    .WRCLK(i_clock),
+	    .WREN(i_valid)
+	    );
+      end	
+   endgenerate
 `endif
 endmodule
