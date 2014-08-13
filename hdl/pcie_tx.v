@@ -73,17 +73,21 @@ module pcie_tx
 	  state <= 5'd0;
 	else
 	  case(state)
-	    0: state <= ~fi_ready ? 3'd0 :
-			rc_valid ? 3'd1 :
-			rr_valid ? 3'd3 :
-			wr_valid ? 3'd5 : 3'd0;
+	    default: state <= ~fi_ready ? 3'd0 :
+			      rc_valid ? 3'd1 :
+			      rr_valid ? 3'd3 :
+			      wr_valid ? 3'd5 : 3'd0;
 	    1: state <= 3'd2;
 	    2: state <= 3'd0;
 	    3: state <= 3'd4;
 	    4: state <= 3'd0;
 	    5: state <= 3'd6;
 	    6: state <= 3'd7;
-	    7: state <= wr_last ? 3'd0 : 3'd7;
+	    7: state <= ~wr_last ? 3'd7 :
+			~fi_ready ? 3'd0 :
+			rc_valid ? 3'd1 :
+			rr_valid ? 3'd3 :
+			wr_valid ? 3'd5 : 3'd0;
 	  endcase
 	fi_valid <= state != 0;
 	case(state)
