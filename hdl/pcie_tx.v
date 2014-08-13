@@ -230,16 +230,31 @@ module wr_mux
 	else
 	  begin
 	     casex(state)
-	       4'h0: state <= state + (wri_valid[0] ? 4'd1 : 4'd4);
-	       4'h4: state <= state + (wri_valid[1] ? 4'd1 : 4'd4);
-	       4'h8: state <= state + (wri_valid[2] ? 4'd1 : 4'd4);
-	       4'hC: state <= state + (wri_valid[3] ? 4'd1 : 4'd4);
+	       default: state <= wri_valid[0] ? 4'h1 :
+				 wri_valid[1] ? 4'h5 : 
+				 wri_valid[2] ? 4'h9 :
+				 wri_valid[3] ? 4'hD : 4'h0;
 	       4'bxx01: state <= state + wro_ready;
-	       4'h2: state <= state + wri_last[0];
-	       4'h6: state <= state + wri_last[1];
-	       4'hA: state <= state + wri_last[2];
-	       4'hE: state <= state + wri_last[3];
-	       default: state <= state + 1'b1;
+	       4'h2: state <= ~wri_last[0] ? state :
+			      wri_valid[1] ? 4'h5 : 
+			      wri_valid[2] ? 4'h9 :
+			      wri_valid[3] ? 4'hD :
+			      wri_valid[0] ? 4'h1 : 4'h0;
+	       4'h6: state <= ~wri_last[1] ? state :
+			      wri_valid[0] ? 4'h1 :
+			      wri_valid[2] ? 4'h9 :
+			      wri_valid[3] ? 4'hD :
+			      wri_valid[1] ? 4'h5 : 4'h0;
+	       4'hA: state <= ~wri_last[2] ? state :
+			      wri_valid[3] ? 4'hD :
+			      wri_valid[0] ? 4'h1 : 
+			      wri_valid[1] ? 4'h5 : 
+			      wri_valid[2] ? 4'h9 : 4'h0;
+	       4'hE: state <= ~wri_last[3] ? state :
+			      wri_valid[0] ? 4'h1 :
+			      wri_valid[1] ? 4'h5 : 
+			      wri_valid[2] ? 4'h9 :
+			      wri_valid[3] ? 4'hD : 4'h0;
 	     endcase
 	  end
 	case(state[3:2])

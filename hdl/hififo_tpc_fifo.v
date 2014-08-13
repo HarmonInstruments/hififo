@@ -74,7 +74,7 @@ module hififo_tpc_fifo
    always @ (posedge clock)
      begin
 	byte_count <= reset ? 1'b0 : byte_count + fifo_read;
-	wr_valid <= reset ? 1'b0 : (((state == 0) || (state > 30)) && enabled && ~o_almost_empty && (count != 0));
+	wr_valid <= reset ? 1'b0 : (((state == 0) || (state > 29)) && enabled && ~o_almost_empty && (count != 0));
 	if(reset)
 	  state <= 1'b0;
 	else if(state == 0)
