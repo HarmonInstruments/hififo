@@ -145,11 +145,16 @@ module rr_mux4
    input [TAG-1:0] 	rri_tag_3,
    output reg 		rro_valid = 0,
    input 		rro_ready,
-   output reg [63:0] 	rro_addr,
+   output [63:0] 	rro_addr,
    output reg [TAG-1:0] rro_tag
    );
    parameter TAG = 8;
+   parameter AMIN = 0; // lowest address bit to keep
    reg [3:0] 		state = 0;
+   reg [63-AMIN:0] 	rro_addr_s;
+   assign rro_addr[63:AMIN] = rro_addr_s;
+   assign rro_addr[AMIN-1:0] = 0;
+      
    always @ (posedge clock)
      begin
 	if(reset)
@@ -167,10 +172,10 @@ module rr_mux4
 	  end
 	rro_valid <= (state[1:0] == 1) && ~rro_ready;
 	case(state[3:2])
-	  0: rro_addr <= rri_addr_0;
-	  1: rro_addr <= rri_addr_1;
-	  2: rro_addr <= rri_addr_2;
-	  3: rro_addr <= rri_addr_3;
+	  0: rro_addr_s <= rri_addr_0[63:AMIN];
+	  1: rro_addr_s <= rri_addr_1[63:AMIN];
+	  2: rro_addr_s <= rri_addr_2[63:AMIN];
+	  3: rro_addr_s <= rri_addr_3[63:AMIN];
 	endcase
 	case(state[3:2])
 	  0: rro_tag <= rri_tag_0;
@@ -292,7 +297,7 @@ module rr_mux
    wire [3:0] 	 ready;
    wire [63:0] 	 addr_0, addr_1, addr_2;
    
-   rr_mux4 #(.TAG(2)) rr_mux4_0
+   rr_mux4 #(.TAG(2), .AMIN(9)) rr_mux4_0
      (.clock(clock),
       .reset(reset),
       .rri_valid(rri_valid[3:0]),
@@ -310,7 +315,7 @@ module rr_mux
       .rro_addr(addr_0),
       .rro_tag(tag_0));
 
-   rr_mux4 #(.TAG(2)) rr_mux4_1
+   rr_mux4 #(.TAG(2), .AMIN(9)) rr_mux4_1
      (.clock(clock),
       .reset(reset),
       .rri_valid(rri_valid[7:4]),
@@ -328,7 +333,7 @@ module rr_mux
       .rro_addr(addr_1),
       .rro_tag(tag_1));
    
-   rr_mux4 #(.TAG(6)) rr_mux4_2
+   rr_mux4 #(.TAG(6), .AMIN(3)) rr_mux4_2
      (.clock(clock),
       .reset(reset),
       .rri_valid(rri_valid[11:8]),
@@ -349,7 +354,7 @@ module rr_mux
    wire [6:0] 	 rro_tag_raw;
    assign rro_tag = {rro_tag_raw[6:3], 1'b0, rro_tag_raw[2:0]};
    
-   rr_mux4 #(.TAG(7)) rr_mux4_012
+   rr_mux4 #(.TAG(7), .AMIN(3)) rr_mux4_012
      (.clock(clock),
       .reset(reset),
       .rri_valid({1'b0, valid}),
