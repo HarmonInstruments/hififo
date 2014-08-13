@@ -52,7 +52,7 @@ module fwft_fifo
    assign o_valid = b_v;
    assign o_data = b_d;
 
-   assign i_ready = (count < 64);
+   assign i_ready = (count < 384);
    assign o_almost_empty = ((count + a_v + b_v) < 16);
    
    always @ (posedge i_clock)

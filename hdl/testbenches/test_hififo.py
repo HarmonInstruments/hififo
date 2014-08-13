@@ -41,12 +41,13 @@ class PCIe_host():
         self.write_data = np.zeros(16*1048576, dtype = 'uint64')
         self.write_data_expected = np.zeros(16*1048576, dtype = 'uint64')
         self.errors = 0
+        self.read_tag = 0
     def write(self, data, address):
         self.txqueue.put([0xbeef00ff40000002, 0])
         self.txqueue.put([address | (endianswap(data) << 32), 0])
         self.txqueue.put([endianswap(data >> 32), 1])
     def read(self, address, tag=0):
-        self.txqueue.put([0xbeef00ff00000001 | tag << 40, 0])
+        self.txqueue.put([0xbaaa00ff00000001 | tag << 40, 0])
         self.txqueue.put([address, 1])
         self.read_outstanding = 1
     def complete(self, address, reqid_tag):
@@ -60,8 +61,6 @@ class PCIe_host():
                 address += 1
                 self.txqueue.put([combine2dw(endianswap(int(self.completion_data[address-1])>>32), endianswap(self.completion_data[address])), j==(complete_size - 1)])
         
-    def do_read(self, address):
-        self.txqueue.put(["read", address])
     def request(self):
         self.requested += 64
     def docycle(self, reset, t_tdata, t_1dw, t_tlast, t_tvalid, t_tready, r_tvalid, r_tlast, r_tdata):
@@ -118,11 +117,15 @@ class PCIe_host():
             self.errors += 1
             return
         data = endianswap(self.rxdata[1]>>32)
-        print "read completion, data = ", data
+        tag = 0xFF & (self.rxdata[1]>>8)
+        print "read completion, data = {}, tag = {}".format(data, tag)
         self.read_outstanding = 0
 
     def handle_write_tlp(self, bits, address, length, rxdata):
         print "{} bit write request at 0x{:016X}, {} dw, {} qw".format(bits, address, length, len(rxdata))
+        if random.choice([0,0,0,0,1]):
+            self.read(0x1, self.read_tag)
+            self.read_tag += 1
         if length & 0x01 != 0:
             print "ERROR: write request is an odd length"
             self.errors += 1
@@ -139,7 +142,7 @@ class PCIe_host():
             self.write_data[address/8 + i & 0xFFFFFF] = d
             print "d[{}] = 0x{:016X}".format(i, d)
     def write_fifo(self, fifo, address):
-        self.write(address | 4, (16+2*fifo)*8)
+        self.write(address | 4, (8+fifo)*8)
 
 def seq_wait(x):
     return 1<<60 | x
@@ -159,31 +162,33 @@ p.completion_data[0] = 1 | 0x200
 p.completion_data[1] = 2 | 0x21000
 p.completion_data[2] = 1 | 0x200
 p.completion_data[3] = 2 | 0x21200
-p.completion_data[4] = 4 | 0x200
+p.completion_data[63] = 4 | 0x200
 p.completion_data[64] = 1 | 0x3C00
 p.completion_data[65] = 2 | 0x21400 | 0x100000000
-p.write_fifo(fifo=0, address=0x0)
+p.write_fifo(fifo=0, address=0xDEAD00000000)
 
 # TPC
 for i in range(0x8000/8):
     p.write_data_expected[0x10000/8+i] = i
-p.completion_data[256] = 1 | 0x4000
-p.completion_data[257] = 2 | 0x10000
-p.completion_data[258] = 1 | 0x4000
-p.completion_data[259] = 2 | 0x14000
+p.completion_data[256] = 1 | 0x2000
+p.completion_data[257] = 2 | 0x300010000
+p.completion_data[258] = 1 | 0x2000
+p.completion_data[259] = 2 | 0x12000
+p.completion_data[260] = 1 | 0x4000
+p.completion_data[261] = 2 | 0x14000
 p.write_fifo(fifo=6, address=0x800)
 for i in range(30):
     p.completion_data[512+2*i] = 1 | 0x200
     p.completion_data[513+2*i] = 2 | 0x21000+0x200*i
-p.completion_data[512+62] = 4 | 0x1200;
+p.completion_data[512+63] = 4 | 0x1200;
 for i in range(30):
     p.completion_data[512+64+2*i] = 1 | 0x200
     p.completion_data[513+64+2*i] = 2 | 0x21000+0x200*(i+30)
-p.completion_data[512+64+62] = 4 | 0x1400;
+p.completion_data[512+64+63] = 4 | 0x1400;
 for i in range(30):
     p.completion_data[512+128+2*i] = 1 | 0x200
     p.completion_data[513+128+2*i] = 2 | 0x21000+0x200*(i+60)
-    p.completion_data[512+128+62] = 4 | 0x1600;
+    p.completion_data[512+128+63] = 4 | 0x1600;
 for i in range(6):
     p.completion_data[512+192+2*i] = 1 | 0x200
     p.completion_data[513+192+2*i] = 2 | 0x21000+0x200*(i+90)
@@ -191,12 +196,12 @@ for i in range(96):
     print i, hex(int(p.completion_data[512+i]))
 p.write_fifo(fifo=4, address=0x1000)
 
-p.read(0*8, 1)
-p.read(1*8, 1)
-p.read(2*8, 1)
+p.read(0*8, 2)
+p.read(1*8, 3)
+p.read(2*8, 4)
     
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid):
-    r = os.system ("iverilog -DSIM -DTPC_CH=1 -DFPC_CH=1 -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../hififo_fpc_mux.v ../hififo_request.v ../hififo_interrupt.v ../top.v")
+    r = os.system ("iverilog -DSIM -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../top.v")
     if r!=0:
         print "iverilog returned ", r
         exit(1)

@@ -22,24 +22,24 @@ module pcie_tx
   (
    input 	 clock,
    input 	 reset,
-   input [15:0]  pcie_id,
+   input [15:0]  pci_id,
    // read completion (rc)
    input [31:0]  rc_dw2,
    input [31:0]  rc_data,
    input 	 rc_valid,
-   output 	 rc_ready,
+   output reg 	 rc_ready,
    // read request (rr)
-   input [1:0] 	 rr_valid,
-   output [1:0]  rr_ready,
-   input [65:0]  rr_data_0,
-   input [65:0]  rr_data_1,
+   input 	 rr_valid,
+   output reg 	 rr_ready,
+   input [63:0]  rr_addr,
+   input [7:0] 	 rr_tag,
    // write request (wr)
-   input [3:0] 	 wr_valid,
-   output [3:0]  wr_ready, // pulses 16 times in request of the next data value
-   input [65:0]  wr_data0,
-   input [65:0]  wr_data1,
-   input [65:0]  wr_data2,
-   input [65:0]  wr_data3,
+   input 	 wr_valid,
+   output  	 wr_ready, // pulses wr_count times in request of the next data value
+   input [63:0]  wr_data,
+   input [63:0]  wr_addr,
+   input [4:0] 	 wr_count,
+   input 	 wr_last,
    // AXI stream to PCI Express core
    input 	 tx_tready,
    output [63:0] tx_tdata,
@@ -53,70 +53,64 @@ module pcie_tx
       es = {x[7:0], x[15:8], x[23:16], x[31:24]};
    endfunction
 
-   reg 		     rc_last;
    reg [2:0] 	     state = 0;
-   assign rc_ready = rc_last;
-   assign rr_ready[0] = (state == 2);
-   assign rr_ready[1] = (state == 3);
-   assign wr_ready[0] = (state == 4);
-   assign wr_ready[1] = (state == 5);
-   assign wr_ready[2] = (state == 6);
-   assign wr_ready[3] = (state == 7);
+   // FIFO input
    wire 	     fi_ready;
    reg [65:0] 	     fi_data;
    reg 		     fi_valid = 0;
-   reg [2:0] 	     state_next = 0;
-   wire [7:0] 	     valid;
-   assign valid[0] = 0;
-   assign valid[1] = rc_valid;
-   assign valid[3:2] = rr_valid;
-   assign valid[7:4] = wr_valid;
+   // wr
+   reg [63:0] 	     wr_data_next;
+   reg 		     wr_is_32;
+   // rr
+   wire 	     rr_is_32 = rr_addr[63:32] == 0;
+   reg 		     rr_is_32_q;
 
+   assign wr_ready = (state == 5);
+      
    always @(posedge clock)
      begin
-	if(reset)
-	  state_next <= 1'b0;
-	else if(~valid[state_next])
-	  state_next <= state_next + 1'b1;
-	else if(state == state_next)
-	  state_next <= state_next + 1'b1;
 	if(reset)
 	  state <= 5'd0;
 	else
 	  case(state)
-	    0: state <= ~fi_ready ? 3'd0 : 
-			valid[state_next] ? state_next : 3'd0;
-	    1: state <= ~rc_last ? state : 3'd0;
-	    2: state <= ~rr_data_0[64] ? state : 3'd0;
-	    3: state <= ~rr_data_1[64] ? state : 3'd0;
-	    4: state <= ~wr_data0[64] ? state : 
-			~fi_ready ? 3'd0 :
-			valid[state_next] ? state_next : 3'd0;
-	    5: state <= ~wr_data1[64] ? state : 
-			~fi_ready ? 3'd0 :
-			valid[state_next] ? state_next : 3'd0;
-	    6: state <= ~wr_data2[64] ? state : 
-			~fi_ready ? 3'd0 :
-			valid[state_next] ? state_next : 3'd0;
-	    7: state <= ~wr_data3[64] ? state : 
-			~fi_ready ? 3'd0 :
-			valid[state_next] ? state_next : 3'd0;
+	    0: state <= ~fi_ready ? 3'd0 :
+			rc_valid ? 3'd1 :
+			rr_valid ? 3'd3 :
+			wr_valid ? 3'd5 : 3'd0;
+	    1: state <= 3'd2;
+	    2: state <= 3'd0;
+	    3: state <= 3'd4;
+	    4: state <= 3'd0;
+	    5: state <= 3'd6;
+	    6: state <= 3'd7;
+	    7: state <= wr_last ? 3'd0 : 3'd7;
 	  endcase
 	fi_valid <= state != 0;
-	rc_last <= (state == 1) && ~rc_last;
 	case(state)
 	  // read completion (rc)
-	  1: fi_data <= {1'b0, rc_last, rc_last ? {es(rc_data), rc_dw2} : {pcie_id, 16'd8, 32'h4A000001}}; // always 1 DW
+	  1: fi_data <= {2'b00, pci_id, 16'd4, 32'h4A000001}; // always 1 DW
+	  2: fi_data <= {2'b01, es(rc_data), rc_dw2};
 	  // read request (rr)
-	  2: fi_data <= rr_data_0;
-	  3: fi_data <= rr_data_1;
+	  3: fi_data <= {2'b00, {pci_id, rr_tag[7:0], 8'hFF}, {2'd0, ~rr_is_32, 29'd128}};
+	  4: fi_data <= {rr_is_32_q, 1'b1, rr_addr[31:0], rr_is_32_q ? rr_addr[31:0] : rr_addr[63:32]};
 	  // write request (wr)
-	  4: fi_data <= wr_data0;
-	  5: fi_data <= wr_data1;
-	  6: fi_data <= wr_data2;
-	  7: fi_data <= wr_data3;
+	  5: begin
+	     wr_is_32 <= wr_addr[63:32] == 0;
+	     fi_data <= {2'b00, pci_id, 16'h00FF, 2'b01, wr_addr[63:32] != 0, 23'd0, wr_count, 1'b0};
+	  end
+	  6: begin
+	     fi_data <= {2'b00, wr_is_32 ? {es(wr_data[31:0]), wr_addr[31:0]} : {wr_addr[31:0], wr_addr[63:32]}};
+	  end
+	  7: begin
+	     fi_data[65:64] <= wr_last ? {wr_is_32, 1'b1} : 2'b00;
+	     fi_data[63:0] <= {2'b00, wr_is_32 ? {es(wr_data[31:0]), es(wr_data_next[63:32])} : {es(wr_data_next[63:32]), es(wr_data_next[31:0])}};
+	  end
 	  default: fi_data <= 1'b0;
 	endcase
+	wr_data_next <= wr_data;
+	rr_ready <= (state == 3);
+	rr_is_32_q <= rr_is_32;
+	rc_ready <= (state == 1);
      end
 
    fwft_fifo #(.NBITS(66)) tx_fifo
@@ -134,3 +128,244 @@ module pcie_tx
       );
 
 endmodule
+
+module rr_mux4
+  (
+   input 		clock,
+   input 		reset,
+   input [3:0] 		rri_valid,
+   output [3:0] 	rri_ready,
+   input [63:0] 	rri_addr_0,
+   input [63:0] 	rri_addr_1,
+   input [63:0] 	rri_addr_2,
+   input [63:0] 	rri_addr_3,
+   input [TAG-1:0] 	rri_tag_0,
+   input [TAG-1:0] 	rri_tag_1,
+   input [TAG-1:0] 	rri_tag_2,
+   input [TAG-1:0] 	rri_tag_3,
+   output reg 		rro_valid = 0,
+   input 		rro_ready,
+   output reg [63:0] 	rro_addr,
+   output reg [TAG-1:0] rro_tag
+   );
+   parameter TAG = 8;
+   reg [3:0] 		state = 0;
+   always @ (posedge clock)
+     begin
+	if(reset)
+	  state <= 4'h0;
+	else 
+	  begin
+	     casex(state)
+	       4'h0: state <= state + (rri_valid[0] ? 4'd1 : 4'd4);
+	       4'h4: state <= state + (rri_valid[1] ? 4'd1 : 4'd4);
+	       4'h8: state <= state + (rri_valid[2] ? 4'd1 : 4'd4);
+	       4'hC: state <= state + (rri_valid[3] ? 4'd1 : 4'd4);
+	       4'bxx01: state <= state + rro_ready;
+	       default: state <= state + 1'b1;
+	     endcase
+	  end
+	rro_valid <= (state[1:0] == 1) && ~rro_ready;
+	case(state[3:2])
+	  0: rro_addr <= rri_addr_0;
+	  1: rro_addr <= rri_addr_1;
+	  2: rro_addr <= rri_addr_2;
+	  3: rro_addr <= rri_addr_3;
+	endcase
+	case(state[3:2])
+	  0: rro_tag <= rri_tag_0;
+	  1: rro_tag <= rri_tag_1;
+	  2: rro_tag <= rri_tag_2;
+	  3: rro_tag <= rri_tag_3;
+	endcase
+     end
+   assign rri_ready[0] = state == 2;
+   assign rri_ready[1] = state == 6;
+   assign rri_ready[2] = state == 10;
+   assign rri_ready[3] = state == 14;
+endmodule
+
+module wr_mux
+  (
+   input 	     clock,
+   input 	     reset,
+   input [3:0] 	     wri_valid,
+   output [3:0]      wri_ready,
+   input [3:0] 	     wri_last,
+   input [63:0]      wri_addr_0,
+   input [63:0]      wri_addr_1,
+   input [63:0]      wri_addr_2,
+   input [63:0]      wri_addr_3,
+   input [63:0]      wri_data_0,
+   input [63:0]      wri_data_1,
+   input [63:0]      wri_data_2,
+   input [63:0]      wri_data_3,
+   output 	     wro_valid,
+   input 	     wro_ready,
+   output [63:0]     wro_addr,
+   output reg [63:0] wro_data,
+   output [4:0]      wro_count,
+   output reg 	     wro_last
+   );
+
+   reg [3:0] 	     state = 0;
+   reg [60:0] 	     wro_addr_s = 0;
+
+   assign wro_addr = {wro_addr_s, 3'd0};
+   assign wro_count = 16;
+   assign wri_ready[0] = (state == 1) && wro_ready;
+   assign wri_ready[1] = (state == 5) && wro_ready;
+   assign wri_ready[2] = (state == 9) && wro_ready;
+   assign wri_ready[3] = (state == 13) && wro_ready;
+   assign wro_valid = (state[1:0] == 1);   
+   always @ (posedge clock)
+     begin
+	if(reset)
+	  state <= 4'h0;
+	else
+	  begin
+	     casex(state)
+	       4'h0: state <= state + (wri_valid[0] ? 4'd1 : 4'd4);
+	       4'h4: state <= state + (wri_valid[1] ? 4'd1 : 4'd4);
+	       4'h8: state <= state + (wri_valid[2] ? 4'd1 : 4'd4);
+	       4'hC: state <= state + (wri_valid[3] ? 4'd1 : 4'd4);
+	       4'bxx01: state <= state + wro_ready;
+	       4'h2: state <= state + wri_last[0];
+	       4'h6: state <= state + wri_last[1];
+	       4'hA: state <= state + wri_last[2];
+	       4'hE: state <= state + wri_last[3];
+	       default: state <= state + 1'b1;
+	     endcase
+	  end
+	case(state[3:2])
+	  0: wro_addr_s <= wri_addr_0[63:3];
+	  1: wro_addr_s <= wri_addr_1[63:3];
+	  2: wro_addr_s <= wri_addr_2[63:3];
+	  3: wro_addr_s <= wri_addr_3[63:3];
+	endcase
+	case(state[3:2])
+	  0: wro_data <= wri_data_0;
+	  1: wro_data <= wri_data_1;
+	  2: wro_data <= wri_data_2;
+	  3: wro_data <= wri_data_3;
+	endcase // case (state[3:2])
+	case(state[3:2])
+	  0: wro_last <= wri_last[0];
+	  1: wro_last <= wri_last[1];
+	  2: wro_last <= wri_last[2];
+	  3: wro_last <= wri_last[3];
+	endcase
+     end
+endmodule
+
+module rr_mux
+  (
+   input 	 clock,
+   input 	 reset,
+   input [11:0]  rri_valid,
+   output [11:0] rri_ready,
+   input [63:0]  rri_addr_0,
+   input [63:0]  rri_addr_1,
+   input [63:0]  rri_addr_2,
+   input [63:0]  rri_addr_3,
+   input [63:0]  rri_addr_4,
+   input [63:0]  rri_addr_5,
+   input [63:0]  rri_addr_6,
+   input [63:0]  rri_addr_7,
+   input [63:0]  rri_addr_8,
+   input [63:0]  rri_addr_9,
+   input [63:0]  rri_addr_10,
+   input [63:0]  rri_addr_11,
+   input [2:0] 	 rri_tag_8,
+   input [2:0] 	 rri_tag_9,
+   input [2:0] 	 rri_tag_10,
+   input [2:0] 	 rri_tag_11,
+   output 	 rro_valid,
+   input 	 rro_ready,
+   output [63:0] rro_addr,
+   output [7:0]  rro_tag
+   );
+   
+   wire [1:0] 	 tag_0, tag_1;
+   wire [5:0] 	 tag_2;
+   wire [2:0] 	 valid;
+   wire [3:0] 	 ready;
+   wire [63:0] 	 addr_0, addr_1, addr_2;
+   
+   rr_mux4 #(.TAG(2)) rr_mux4_0
+     (.clock(clock),
+      .reset(reset),
+      .rri_valid(rri_valid[3:0]),
+      .rri_ready(rri_ready[3:0]),
+      .rri_addr_0(rri_addr_0),
+      .rri_addr_1(rri_addr_1),
+      .rri_addr_2(rri_addr_2),
+      .rri_addr_3(rri_addr_3),
+      .rri_tag_0(2'd0),
+      .rri_tag_1(2'd1),
+      .rri_tag_2(2'd2),
+      .rri_tag_3(2'd3),
+      .rro_valid(valid[0]),
+      .rro_ready(ready[0]),
+      .rro_addr(addr_0),
+      .rro_tag(tag_0));
+
+   rr_mux4 #(.TAG(2)) rr_mux4_1
+     (.clock(clock),
+      .reset(reset),
+      .rri_valid(rri_valid[7:4]),
+      .rri_ready(rri_ready[7:4]),
+      .rri_addr_0(rri_addr_4),
+      .rri_addr_1(rri_addr_5),
+      .rri_addr_2(rri_addr_6),
+      .rri_addr_3(rri_addr_7),
+      .rri_tag_0(2'd0),
+      .rri_tag_1(2'd1),
+      .rri_tag_2(2'd2),
+      .rri_tag_3(2'd3),
+      .rro_valid(valid[1]),
+      .rro_ready(ready[1]),
+      .rro_addr(addr_1),
+      .rro_tag(tag_1));
+   
+   rr_mux4 #(.TAG(6)) rr_mux4_2
+     (.clock(clock),
+      .reset(reset),
+      .rri_valid(rri_valid[11:8]),
+      .rri_ready(rri_ready[11:8]),
+      .rri_addr_0(rri_addr_8),
+      .rri_addr_1(rri_addr_9),
+      .rri_addr_2(rri_addr_10),
+      .rri_addr_3(rri_addr_11),
+      .rri_tag_0({3'd0,rri_tag_8}),
+      .rri_tag_1({3'd1,rri_tag_9}),
+      .rri_tag_2({3'd2,rri_tag_10}),
+      .rri_tag_3({3'd3,rri_tag_11}),
+      .rro_valid(valid[2]),
+      .rro_ready(ready[2]),
+      .rro_addr(addr_2),
+      .rro_tag(tag_2));
+
+   wire [6:0] 	 rro_tag_raw;
+   assign rro_tag = {rro_tag_raw[6:3], 1'b0, rro_tag_raw[2:0]};
+   
+   rr_mux4 #(.TAG(7)) rr_mux4_012
+     (.clock(clock),
+      .reset(reset),
+      .rri_valid({1'b0, valid}),
+      .rri_ready(ready),
+      .rri_addr_0(addr_0),
+      .rri_addr_1(addr_1),
+      .rri_addr_2(addr_2),
+      .rri_addr_3(64'h0),
+      .rri_tag_0({5'd16,tag_0}),
+      .rri_tag_1({5'd17,tag_1}),
+      .rri_tag_2({1'b0,tag_2}),
+      .rri_tag_3(7'd0),
+      .rro_valid(rro_valid),
+      .rro_ready(rro_ready),
+      .rro_addr(rro_addr),
+      .rro_tag(rro_tag_raw));   
+     
+endmodule
+
