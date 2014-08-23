@@ -112,7 +112,7 @@ module pcie_from_pc_fifo
 	  interrupt_enable <= 1'b1;
 	if(write_interrupt)
 	  interrupt_matchval <= rx_data[31:9];
-	interrupt_match <= {interrupt_match[0], (interrupt_matchval == count)};
+	interrupt_match <= {interrupt_match[0], (interrupt_matchval == byte_count)};
 	interrupt[0] <= interrupt_enable && (interrupt_match == 2'b01);
 	desc_addr_ready_prev <= desc_addr_ready;
 	interrupt[1] <= desc_addr_ready & ~desc_addr_ready_prev;
