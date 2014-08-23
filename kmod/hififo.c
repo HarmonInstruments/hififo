@@ -29,7 +29,6 @@
 #include <linux/ioctl.h>
 
 #define hififo_min(x,y) ((x) > (y) ? (y) : (x))
-//#define max(x,y) ((x) < (y) ? (y) : (x))
 
 #define VENDOR_ID 0x10EE
 #define DEVICE_ID 0x7024
@@ -45,14 +44,13 @@
 
 #define MAX_FIFOS 8
 
-#define BAR_SIZE 512
-
 static struct pci_device_id hififo_pci_table[] = {
   {VENDOR_ID, DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID, 0, 0 ,0},
   {0,}
 };
 
 #define BUFFER_SIZE (4096*1024)
+#define REQ_SIZE 4096
 
 #define REG_INTERRUPT 0
 #define REG_ID 1
@@ -65,9 +63,9 @@ static struct pci_device_id hififo_pci_table[] = {
 #define readreg(s, addr) le32_to_cpu(readl(&s->pio_reg_base[(addr)]))
 
 #define write_count(count) (writereg(fifo, count, REG_COUNT))
-#define write_status(status) (writeq(cpu_to_le64(status), fifo->local_base + 0))
-#define read_status() (le32_to_cpu(readl(fifo->local_base + 0)))
-#define write_address(address) (writeq(cpu_to_le64(address), fifo->local_base + 1))
+#define write_status(status) (writeq(cpu_to_le64((status) | 3), fifo->local_base))
+#define write_req(s, req) (writeq(cpu_to_le64(req), s->local_base))
+#define read_status() (le32_to_cpu(readl(fifo->local_base)))
 
 static struct class *hififo_class;
 static int hififo_count;
@@ -75,6 +73,8 @@ static int hififo_count;
 struct hififo_fifo {
   dma_addr_t dma_addr;
   u64 *buffer;
+  dma_addr_t req_dma_addr;
+  u64 *req;
   u64 *pio_reg_base;
   u64 *local_base;
   struct cdev cdev;
@@ -82,6 +82,7 @@ struct hififo_fifo {
   u32 pointer_in;
   u32 pointer_out;
   u32 bytes_requested;
+  u32 bytes_available;
   int is_open;
   int n; // fifo number
 };
@@ -93,6 +94,8 @@ struct hififo_dev {
   int nfifos;
   int idreg;
 };
+
+// TODO: make this thread safe
 
 static int hififo_open(struct inode *inode, struct file *filp){
   struct hififo_fifo *fifo = container_of(inode->i_cdev, struct hififo_fifo, cdev);
@@ -115,31 +118,34 @@ static int hififo_release(struct inode *inode, struct file *filp){
 
 static u32 get_bytes_in_ring_to_pc(struct hififo_fifo *fifo){
   u32 status = read_status();
-  u32 bytes_outstanding = fifo->bytes_requested - status;
+  u32 bytes_outstanding = fifo->bytes_requested - (status & 0xFFFFFFF8);
   u32 bytes_in_buffer = (BUFFER_SIZE - 1) & (fifo->pointer_in - (fifo->pointer_out + bytes_outstanding));
-  printk("tpc: status = %x, bytes available = %x, outstanding = %x\n", status, bytes_in_buffer, bytes_outstanding);
+  printk("tpc: status = %.8x, bytes available = %x, outstanding = %x\n", status, bytes_in_buffer, bytes_outstanding);
   return bytes_in_buffer;
 }
 
 static u32 wait_bytes_in_ring_to_pc(struct hififo_fifo *fifo, u32 desired_bytes){
   u32 bytes_in_buffer = get_bytes_in_ring_to_pc(fifo);
   u32 bytes_free_in_buffer = (BUFFER_SIZE - ((BUFFER_SIZE - 1) & (fifo->pointer_in - fifo->pointer_out)));
-  int retval;
+  int retval, i;
   if(bytes_in_buffer >= desired_bytes)
     return bytes_in_buffer;
-  if(bytes_free_in_buffer > BUFFER_SIZE/32)
+  if(bytes_free_in_buffer > BUFFER_SIZE/8)
     {
       bytes_free_in_buffer -= 1024;
       bytes_free_in_buffer = hififo_min(bytes_free_in_buffer, BUFFER_SIZE - fifo->pointer_in);
       bytes_free_in_buffer = hififo_min(bytes_free_in_buffer, BUFFER_SIZE/2);
       printk("read: %x, length = %x\n", fifo->pointer_in, (u32) bytes_free_in_buffer);
-      write_count(bytes_free_in_buffer);
-      write_address(fifo->dma_addr + fifo->pointer_in);
+      fifo->req[0] = 1 | bytes_free_in_buffer;
+      fifo->req[1] = 2 | (fifo->dma_addr + fifo->pointer_in);
+      for(i=2; i<64; i++)
+	fifo->req[i] = 0;
+      write_req(fifo, fifo->req_dma_addr | 0x04);
       fifo->bytes_requested += bytes_free_in_buffer;
       fifo->pointer_in += bytes_free_in_buffer;
       fifo->pointer_in &= (BUFFER_SIZE - 1);
     }
-  write_status(fifo->bytes_requested + desired_bytes - ((BUFFER_SIZE-1) & (fifo->pointer_in - fifo->pointer_out)));
+  write_status(3 | (fifo->bytes_requested + desired_bytes - ((BUFFER_SIZE-1) & (fifo->pointer_in - fifo->pointer_out))));
   retval = wait_event_interruptible_timeout(fifo->queue, (get_bytes_in_ring_to_pc(fifo) >= desired_bytes), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
   bytes_in_buffer = get_bytes_in_ring_to_pc(fifo);
   printk("tpc wait, %d jiffies remain, %u bytes avail\n", retval, bytes_in_buffer);
@@ -179,28 +185,31 @@ static ssize_t hififo_read(struct file *filp,
   return length;
 }
 
-static u32 get_bytes_in_ring_from_pc(struct hififo_fifo *fifo){
-  u32 status = read_status();
-  u32 bytes_available;
-  while((status & 0x01) != 0){
+static int get_bytes_in_ring_from_pc(struct hififo_fifo *fifo, u32 desired_bytes){
+  u32 status;
+  if(fifo->bytes_available >= desired_bytes)
+    return 1;
+  status = read_status();
+  if((status & 0x04) != 0){
     status = read_status();
     printk("retry: REG_FROM_PC_COUNT = %x\n", status);
   }
-  bytes_available = (BUFFER_SIZE - 1024) - (fifo->bytes_requested - status);
-  printk("fpc: status = %x, bytes available = %x, bytes_requested = %x\n", status, bytes_available, fifo->bytes_requested);
-  return bytes_available;
+  fifo->bytes_available = (BUFFER_SIZE - 1024) - (fifo->bytes_requested - (status & 0xFFFFFFF8));
+  printk("fpc: status = %x, bytes available = %x, bytes_requested = %x\n", status, fifo->bytes_available, fifo->bytes_requested);
+  return (fifo->bytes_available >= desired_bytes);
 }
 
 static u32 wait_ring_from_pc(struct hififo_fifo *fifo, u32 desired_bytes){
-  u32 bytes_available = get_bytes_in_ring_from_pc(fifo);
   int retval;
-  if(bytes_available >= desired_bytes)
-    return bytes_available;
-  write_status(fifo->bytes_requested + desired_bytes - (BUFFER_SIZE - 1024));
-  retval = wait_event_interruptible_timeout(fifo->queue, (get_bytes_in_ring_from_pc(fifo) >= desired_bytes), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
-  bytes_available = get_bytes_in_ring_from_pc(fifo);
-  printk("fpc: wait, %d jiffies remain, %.8x bytes avail\n", retval, bytes_available);
-  return bytes_available;
+  u32 tmp;
+  if(get_bytes_in_ring_from_pc(fifo, desired_bytes))
+    return fifo->bytes_available;
+  tmp = (3 | (fifo->bytes_requested + desired_bytes - (BUFFER_SIZE - 1024)));
+  printk("fpc: setting interrupt for %.8x\n", tmp);
+  write_status(tmp);
+  retval = wait_event_interruptible_timeout(fifo->queue, get_bytes_in_ring_from_pc(fifo, desired_bytes), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
+  printk("fpc: wait, %d jiffies remain, %.8x bytes avail\n", retval, fifo->bytes_available);
+  return fifo->bytes_available;
 }
 
 static ssize_t hififo_write(struct file *filp,
@@ -210,12 +219,12 @@ static ssize_t hififo_write(struct file *filp,
   struct hififo_fifo *fifo = filp->private_data;
   size_t count = 0;
   size_t copy_length = 0;
-  int retval;
-  printk("fpc: write, %x bytes, addr = 0x%.16zx\n", (int) length, buf);
+  int retval, i;
+  printk("fpc: write, %x bytes, addr = 0x%p\n", (int) length, buf);
   if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
     return -EINVAL;
   while(count != length){
-    copy_length = hififo_min(BUFFER_SIZE/4, BUFFER_SIZE - fifo->pointer_in);
+    copy_length = hififo_min(BUFFER_SIZE/2, BUFFER_SIZE - fifo->pointer_in);
     copy_length = hififo_min(copy_length, length-count);
     retval = wait_ring_from_pc(fifo, copy_length);
     if(retval < copy_length){
@@ -228,9 +237,13 @@ static ssize_t hififo_write(struct file *filp,
       return -EFAULT;
     }
     count += copy_length;
-    write_count(copy_length);
-    write_address(fifo->dma_addr + fifo->pointer_in);
+    fifo->req[0] = 1 | copy_length;
+    fifo->req[1] = 2 | (fifo->dma_addr + fifo->pointer_in);
+    for(i=2; i<64; i++)
+      fifo->req[i] = 0;
+    write_req(fifo, fifo->req_dma_addr | 4);
     printk("fpc: hwrite: %x, length = %x\n", fifo->pointer_in, (u32) copy_length); 
+    fifo->bytes_available -= copy_length;
     fifo->pointer_in += copy_length;
     fifo->pointer_in &= (BUFFER_SIZE - 1);
     fifo->bytes_requested += copy_length;
@@ -239,7 +252,7 @@ static ssize_t hififo_write(struct file *filp,
 }
 
 static long hififo_ioctl (struct file *file, unsigned int command, unsigned long arg){
-  struct hififo_fifo *fifo = file->private_data;
+  //struct hififo_fifo *fifo = file->private_data;
   u64 tmp[8];
   switch(command) {
     // get info
@@ -321,13 +334,13 @@ static struct file_operations fops_fpc = {
 
 static irqreturn_t hififo_interrupt(int irq, void *dev_id, struct pt_regs *regs){
   struct hififo_dev *drvdata = dev_id;
-  u64 sr = readreg(drvdata, REG_INTERRUPT);
+  u32 sr = readreg(drvdata, REG_INTERRUPT);
   int i;
+  printk("hififo interrupt: sr = %x\n", sr);
   for(i=0; i<MAX_FIFOS; i++){
-    if((sr & (1<<i)) && (drvdata->fifo[i] != NULL))
+    if((sr & (0x3<<(2*i))) && (drvdata->fifo[i] != NULL))
       wake_up_all(&drvdata->fifo[i]->queue);
   }
-  printk("hififo interrupt: sr = %llx\n", sr);
   return IRQ_HANDLED;
 }
 
@@ -378,7 +391,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     return retval;
   }
 
-  drvdata->pio_reg_base = (u64 *) pcim_iomap(pdev, 0, BAR_SIZE);
+  drvdata->pio_reg_base = (u64 *) pcim_iomap(pdev, 0, 0);
   printk(KERN_INFO DEVICE_NAME ": pci_resource_start(dev, 0) = 0x%.8llx, virt = 0x%.16llx\n", (u64) pci_resource_start(pdev, 0), (u64) drvdata->pio_reg_base);
   
   for(i=0; i<8; i++)
@@ -437,14 +450,19 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     device_create(hififo_class, NULL, MKDEV(MAJOR(dev), i), NULL, tmpstr);
     fifo->n = i;
     fifo->pio_reg_base = drvdata->pio_reg_base;
-    fifo->local_base = drvdata->pio_reg_base+16+2*i;
+    fifo->local_base = drvdata->pio_reg_base+8+i;
     init_waitqueue_head(&fifo->queue);
     fifo->pointer_in = 0;
     fifo->pointer_out = 0;
     fifo->bytes_requested = 0;
-    fifo->buffer = pci_alloc_consistent(pdev, BUFFER_SIZE, &drvdata->fifo[i]->dma_addr);
+    fifo->buffer = pci_alloc_consistent(pdev, BUFFER_SIZE, &fifo->dma_addr);
     if(fifo->buffer == NULL){
       printk("Failed to allocate DMA buffer\n");
+      return -ENOMEM;
+    }
+    fifo->req = pci_alloc_consistent(pdev, REQ_SIZE, &fifo->req_dma_addr);
+    if(fifo->req == NULL){
+      printk("Failed to allocate request DMA buffer\n");
       return -ENOMEM;
     }
   }
