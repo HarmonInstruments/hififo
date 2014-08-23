@@ -61,7 +61,7 @@ module hififo_tpc_fifo
    wire [63:0] 	    desc_data;
    wire 	    desc_ready, desc_addr_ready;
    wire             desc_read = desc_ready & ~enabled;
-   wire 	    write_interrupt = rx_data_valid && (rx_data[2:0] == 4);
+   wire 	    write_interrupt = rx_data_valid && (rx_data[2:0] == 3);
    wire 	    write_abort = rx_data_valid && (rx_data[2:0] == 5);
    
    wire 	    fifo_read = (wr_ready && wr_valid) || ((state != 0) && (state < 30));
@@ -69,8 +69,7 @@ module hififo_tpc_fifo
    assign wr_addr = {addr, 3'd0};
    assign status = {byte_count, 2'd0, desc_addr_ready};
    assign wr_count = 16;
-   
-               
+                  
    always @ (posedge clock)
      begin
 	byte_count <= reset ? 1'b0 : byte_count + fifo_read;
