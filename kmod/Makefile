@@ -18,7 +18,7 @@ dmesg:
 	ssh $(HOST) dmesg
 
 test: test.c
-	gcc test.c -o test -std=c99 -Wall -fopenmp -march=native -mavx -O3
+	g++ test.c -o test -Wall -fopenmp -march=native -mavx -O3
 runtest: test
 	scp test root@$(HOST):
 	ssh root@$(HOST) time ./test
