@@ -172,7 +172,7 @@ static int hififo_generate_descriptor(struct hififo_dma * dma, int sg_count)
     }
     if(j % 64 == 62){
       dma->req[j] = 0;
-      dma->req[j+1] = 4 | (dma->req_dma_addr + (j + 2));
+      dma->req[j+1] = 4 | (dma->req_dma_addr + 8*(j + 2));
       j+= 2;
     }
     dma->req[j++] = 1 | len;
