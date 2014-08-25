@@ -28,6 +28,8 @@
 #include <thread>
 #include <iostream>
 
+using namespace std;
+
 class TimeIt {
   struct timespec start_time;
  public:
@@ -40,6 +42,21 @@ class TimeIt {
     return (stop_time.tv_sec - start_time.tv_sec) + 1e-9 * (stop_time.tv_nsec - start_time.tv_nsec);  
   };
 };
+
+void* operator new(size_t sz) throw (std::bad_alloc)
+{
+  void* mem = malloc(sz);
+  if (mem)
+    return mem;
+  else
+    throw std::bad_alloc();
+}
+
+
+void operator delete(void* ptr) throw()
+{
+  free(ptr);
+}
 
 #define IOC_INFO 0x10
 #define IOC_GET_TO_PC 0x11
@@ -56,8 +73,6 @@ struct fifodev
   int fd;
   uint64_t read_size;
   uint64_t write_size;
-  uint8_t * read_base;
-  uint8_t * write_base;
   uint64_t read_available;
   uint64_t write_available;
   uint64_t read_pointer;
@@ -92,10 +107,6 @@ struct fifodev * fifo_open(const char * filename)
     perror("mmap failed");
     goto fail2;
   }
-  f->write_base = f->read_base + (2 * f->read_size);
-  f->read_mask = f->read_size - 1;
-  f->write_mask = f->write_size - 1;
-  fprintf(stderr, "f->read_pointer = %ld\n", f->read_pointer);
   */
   return f;
   //munmap(f->read_base, 2 * (f->read_size + f->write_size));
@@ -119,7 +130,7 @@ void fifo_close(struct fifodev *f){
  * bytes from the FIFO or returns NULL if insufficient data
  * is available. Updates f->read_available, can 
  */
-void * fifo_read_get(struct fifodev *f, uint64_t count){
+/*void * fifo_read_get(struct fifodev *f, uint64_t count){
   if(count < f->read_available)
     return f->read_base + f->read_pointer;
   unsigned long tmp = ioctl(f->fd, _IO('f', IOC_GET_TO_PC), count);
@@ -142,7 +153,7 @@ int fifo_read_free(struct fifodev *f, uint64_t count){
     return -1;
   }
   return 0;
-}
+  }
 
 void * fifo_write_get(struct fifodev *f, uint64_t count){
   if(count < f->write_available)
@@ -168,7 +179,7 @@ uint64_t fifo_write_put(struct fifodev *f, uint64_t count){
     return -1;
   }
   return 0;
-}
+  }*/
 
 uint64_t fifo_set_timeout(struct fifodev *f, uint64_t timeout){
   if(ioctl(f->fd, _IO('f', IOC_SET_TIMEOUT), timeout) != 0){
@@ -180,10 +191,16 @@ uint64_t fifo_set_timeout(struct fifodev *f, uint64_t timeout){
 
 void writer(struct fifodev *f, size_t count)
 {
-  size_t bs = 1024*1256;
+  size_t bs = 1024*512;
   ssize_t retval;
   uint64_t wcount = 0xDEADE00000000000;
-  uint64_t *wbuf = new uint64_t[bs];
+  uint64_t *wbuf = (uint64_t *) mmap(NULL, bs*8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE | MAP_HUGETLB, 1, 0);
+  cerr << wbuf << " wbuf\n";
+  if(wbuf == NULL){
+    cerr << "mmap failed\n";
+    return;
+  }
+  //new uint64_t[bs];
   TimeIt timer{};
   for(uint64_t i=0; i<count; i+=bs){
     //fprintf(stderr, "writer: i = %lx, rcount = %lx, available = %lx, wbuf = %lx\n", i, rcount, f->write_available, (uint64_t) wbuf);
@@ -195,10 +212,11 @@ void writer(struct fifodev *f, size_t count)
       break;
     }
   }
-  double runtime = timer.elapsed();
-  double speed = count * 8.0e-6 / runtime;
+  auto runtime = timer.elapsed();
+  auto speed = count * 8.0e-6 / runtime;
   std::cerr << "wrote " << count*8 << " bytes in " << runtime << " seconds, " << speed << " MB/s\n";
-  delete[] wbuf;
+  //delete[] wbuf;
+  munmap(wbuf, bs);
 };
 
 void checker(struct fifodev *f, size_t count)
@@ -234,7 +252,7 @@ void checker(struct fifodev *f, size_t count)
 
 int main ( int argc, char **argv )
 {
-  uint64_t length = 1048576L*4L;//128L*8L;
+  uint64_t length = 1048576L*128L;//128L*8L;
   struct fifodev *f2 = fifo_open("/dev/hififo_0_2");
   if(f2 == NULL)
     exit(EXIT_FAILURE);
@@ -250,17 +268,17 @@ int main ( int argc, char **argv )
 
   writer(f2, length);
   checker(f6, length);
-
+  
   std::cerr << "f0 -> f4\n";
   #pragma omp parallel sections
   {
     #pragma omp section
     {
-      writer(f0, length);
+      checker(f4, length);
     }
     #pragma omp section
     {
-      checker(f4, length);
+      writer(f0, length);
     }
   }
 
@@ -269,6 +287,7 @@ int main ( int argc, char **argv )
   std::thread t_writer (writer, f2, length);
   t_writer.join();
   t_reader.join();
+
   fifo_close(f0);
   fifo_close(f2);
   fifo_close(f4);

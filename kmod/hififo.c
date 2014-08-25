@@ -27,6 +27,7 @@
 #include <linux/sched.h>
 #include <linux/cdev.h>
 #include <linux/ioctl.h>
+#include <linux/mm.h>
 
 #define hififo_min(x,y) ((x) > (y) ? (y) : (x))
 
@@ -50,7 +51,8 @@ static struct pci_device_id hififo_pci_table[] = {
 };
 
 #define BUFFER_SIZE (4096*1024)
-#define REQ_SIZE 4096
+#define MAX_PAGES 1024
+#define REQ_SIZE (MAX_PAGES * 17)
 
 #define REG_INTERRUPT 0
 #define REG_ID 1
@@ -70,7 +72,18 @@ static struct pci_device_id hififo_pci_table[] = {
 static struct class *hififo_class;
 static int hififo_count;
 
+struct hififo_dma {
+  struct scatterlist sglist[MAX_PAGES];
+  struct page * page_list[MAX_PAGES];
+  dma_addr_t req_dma_addr;
+  u64 *req;
+  int n_pages;
+  int mapped;
+};
+
 struct hififo_fifo {
+  struct pci_dev *pdev;
+  struct hififo_dma * dma[2];
   dma_addr_t dma_addr;
   u64 *buffer;
   dma_addr_t req_dma_addr;
@@ -99,20 +112,126 @@ struct hififo_dev {
 
 static int hififo_open(struct inode *inode, struct file *filp){
   struct hififo_fifo *fifo = container_of(inode->i_cdev, struct hififo_fifo, cdev);
+  int i;
   filp->private_data = fifo;
   printk("hififo: open\n");
   if (fifo->is_open)
     return -EBUSY;
+
+  fifo->dma[0] = kcalloc(2, sizeof(struct hififo_dma), GFP_KERNEL);
+  if(fifo->dma[0] == NULL)
+    return -ENOMEM;
+  fifo->dma[1] = ((void *) fifo->dma[0]) + sizeof(struct hififo_dma);
+  for(i=0; i<2; i++){
+    fifo->dma[i]->req = pci_alloc_consistent(fifo->pdev, REQ_SIZE, &fifo->dma[i]->req_dma_addr);
+    if(fifo->dma[i]->req == NULL){
+      printk("Failed to allocate request DMA buffer\n");
+      goto fail;
+    }
+  }
   fifo->is_open++;
   try_module_get(THIS_MODULE); // increment the usage count
   return 0;
+ fail:
+  for(i=0; i<2; i++){
+    if(fifo->dma[i]->req != NULL)
+      pci_free_consistent(fifo->pdev, REQ_SIZE, fifo->dma[i]->req, fifo->dma[i]->req_dma_addr);
+  }
+  kfree(fifo->dma[0]);
+  return -ENOMEM;
 }
 
 static int hififo_release(struct inode *inode, struct file *filp){
   struct hififo_fifo *fifo = filp->private_data;
+  int i;
   fifo->is_open--;
+  for(i=0; i<2; i++){
+    if(fifo->dma[i]->req != NULL)
+      pci_free_consistent(fifo->pdev, REQ_SIZE, fifo->dma[i]->req, fifo->dma[i]->req_dma_addr);
+  }
+  kfree(fifo->dma[0]);
   module_put(THIS_MODULE); // decrement the usage count
   printk("hififo: close\n");
+  return 0;
+}
+
+static int hififo_generate_descriptor(struct hififo_dma * dma, int sg_count)
+{
+  int i, j=0;
+  size_t len;
+  dma_addr_t hw_addr;
+  for (i = 0; i < sg_count; i++) {
+    hw_addr = sg_dma_address(&dma->sglist[i]);
+    len = sg_dma_len(&dma->sglist[i]);
+    while(i+1 < sg_count){
+      if(hw_addr+len != sg_dma_address(&dma->sglist[i+1]))
+	break;
+      len += sg_dma_len(&dma->sglist[i++]);
+      if(len >= 2*1024*1024)
+	break;
+    }
+    if(j % 64 == 62){
+      dma->req[j] = 0;
+      dma->req[j+1] = 4 | (dma->req_dma_addr + (j + 2));
+      j+= 2;
+    }
+    dma->req[j++] = 1 | len;
+    dma->req[j++] = 2 | hw_addr;
+    printk("sg_ent: 0x%.16llx, %ld\n", hw_addr, len); 
+  }
+  while((j&(64-1)) != 0)
+    dma->req[j++] = 0;
+  for(i=0; i<64; i++)
+    if(dma->req[i] != 0)
+      printk("desc[%d] = 0x%.16llx\n", i, dma->req[i]);
+  return 0;
+}
+
+static void hififo_unmap_sg(struct hififo_fifo *fifo, struct hififo_dma *dma){
+  int i;
+  if(dma->mapped)
+    pci_unmap_sg(fifo->pdev, dma->sglist, dma->n_pages, PCI_DMA_TODEVICE);
+  dma->mapped = 0;
+  for (i = 0; i < dma->n_pages; i++) {
+    if (dma->page_list[i] != NULL) {
+      //if (dirty)
+      //set_page_dirty_lock(dma->page_list[i]);
+      put_page(dma->page_list[i]);
+    }
+  }
+  dma->n_pages = 0;
+}
+
+static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, const void *buf, size_t length){
+  int i, rc;
+  dma->n_pages = DIV_ROUND_UP(length, PAGE_SIZE);
+  printk ("start gup\n");
+  rc = get_user_pages_fast((loff_t)buf, dma->n_pages, 1, dma->page_list);
+  if (rc < dma->n_pages) {
+    dma->n_pages = rc;
+    printk("get user pages failed with %d\n", rc);
+    if(rc > 0)
+      hififo_unmap_sg(fifo, dma);
+    dma->n_pages = 0;
+    return -EFAULT;
+  }
+  /* Map a scatter-gather list to point at the userspace pages */
+  /*first, middle*/
+  for(i=0; i < dma->n_pages-1; i++)
+    sg_set_page(&dma->sglist[i], dma->page_list[i], PAGE_SIZE, 0);
+  /*last*/
+  if (fifo->dma[0]->n_pages > 1) 
+    sg_set_page(&dma->sglist[dma->n_pages-1], dma->page_list[dma->n_pages-1], length - ((dma->n_pages-1)*PAGE_SIZE), 0);
+  
+  rc = pci_map_sg(fifo->pdev, dma->sglist, dma->n_pages, PCI_DMA_TODEVICE);
+  printk ("pci_map_sg returned %d\n", rc);
+  dma->mapped = 1;
+  hififo_generate_descriptor(dma, rc);
+  // wait for ready
+  printk("doing reqeset, addr = 0x%.16llx\n", dma->req_dma_addr);
+  write_req(fifo, dma->req_dma_addr | 4);
+  fifo->bytes_requested += length;
+  printk("end gup\n");
   return 0;
 }
 
@@ -127,7 +246,7 @@ static u32 get_bytes_in_ring_to_pc(struct hififo_fifo *fifo){
 static u32 wait_bytes_in_ring_to_pc(struct hififo_fifo *fifo, u32 desired_bytes){
   u32 bytes_in_buffer = get_bytes_in_ring_to_pc(fifo);
   u32 bytes_free_in_buffer = (BUFFER_SIZE - ((BUFFER_SIZE - 1) & (fifo->pointer_in - fifo->pointer_out)));
-  int retval, i;
+  int rc, i;
   if(bytes_in_buffer >= desired_bytes)
     return bytes_in_buffer;
   if(bytes_free_in_buffer > BUFFER_SIZE/8)
@@ -146,9 +265,9 @@ static u32 wait_bytes_in_ring_to_pc(struct hififo_fifo *fifo, u32 desired_bytes)
       fifo->pointer_in &= (BUFFER_SIZE - 1);
     }
   write_status(3 | (fifo->bytes_requested + desired_bytes - ((BUFFER_SIZE-1) & (fifo->pointer_in - fifo->pointer_out))));
-  retval = wait_event_interruptible_timeout(fifo->queue, (get_bytes_in_ring_to_pc(fifo) >= desired_bytes), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
+  rc = wait_event_interruptible_timeout(fifo->queue, (get_bytes_in_ring_to_pc(fifo) >= desired_bytes), HZ/4); // rc: 0 if timed out, else number of jiffies remaining
   bytes_in_buffer = get_bytes_in_ring_to_pc(fifo);
-  printk("tpc wait, %d jiffies remain, %u bytes avail\n", retval, bytes_in_buffer);
+  printk("tpc wait, %d jiffies remain, %u bytes avail\n", rc, bytes_in_buffer);
   return bytes_in_buffer;
 }
 
@@ -160,7 +279,7 @@ static ssize_t hififo_read(struct file *filp,
   size_t count = 0;
   u32 bytes_in_buffer;
   size_t copy_length;
-  int retval;
+  int rc;
   if((length&0x1FF) != 0){ /* reads must be a multiple of 8 bytes */
     printk("hififo_read: invalid length");
     return -EINVAL;
@@ -173,9 +292,9 @@ static ssize_t hififo_read(struct file *filp,
       printk("%u bytes in buffer, copy length = %zu\n", bytes_in_buffer, copy_length);
       return 0;
     }
-    retval = copy_to_user(buffer + count, fifo->pointer_out + (char *) fifo->buffer, copy_length);
-    if(retval != 0){
-      printk(KERN_ERR DEVICE_NAME "copy_to_user failed with %d\n", retval);
+    rc = copy_to_user(buffer + count, fifo->pointer_out + (char *) fifo->buffer, copy_length);
+    if(rc != 0){
+      printk(KERN_ERR DEVICE_NAME "copy_to_user failed with %d\n", rc);
       return -EFAULT;
     }
     count += copy_length;
@@ -200,15 +319,15 @@ static int get_bytes_in_ring_from_pc(struct hififo_fifo *fifo, u32 desired_bytes
 }
 
 static u32 wait_ring_from_pc(struct hififo_fifo *fifo, u32 desired_bytes){
-  int retval;
+  int rc;
   u32 tmp;
   if(get_bytes_in_ring_from_pc(fifo, desired_bytes))
     return fifo->bytes_available;
   tmp = (3 | (fifo->bytes_requested + desired_bytes - (BUFFER_SIZE - 1024)));
   printk("fpc: setting interrupt for %.8x\n", tmp);
   write_status(tmp);
-  retval = wait_event_interruptible_timeout(fifo->queue, get_bytes_in_ring_from_pc(fifo, desired_bytes), HZ/4); // retval: 0 if timed out, else number of jiffies remaining
-  printk("fpc: wait, %d jiffies remain, %.8x bytes avail\n", retval, fifo->bytes_available);
+  rc = wait_event_interruptible_timeout(fifo->queue, get_bytes_in_ring_from_pc(fifo, desired_bytes), HZ/4); // rc: 0 if timed out, else number of jiffies remaining
+  printk("fpc: wait, %d jiffies remain, %.8x bytes avail\n", rc, fifo->bytes_available);
   return fifo->bytes_available;
 }
 
@@ -219,20 +338,32 @@ static ssize_t hififo_write(struct file *filp,
   struct hififo_fifo *fifo = filp->private_data;
   size_t count = 0;
   size_t copy_length = 0;
-  int retval, i;
+  int rc, i;
   printk("fpc: write, %x bytes, addr = 0x%p\n", (int) length, buf);
+  if((buf == NULL) || (length == 0))
+    return -EINVAL;
+  if((((size_t) buf) & 0xFFF) != 0)
+    return -EINVAL;
   if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
     return -EINVAL;
+
+  hififo_map_sg(fifo, fifo->dma[0], buf, length);
+  // wait for it
+  write_status(3 | fifo->bytes_requested);
+  rc = wait_event_interruptible_timeout(fifo->queue, (read_status() & 0xFFFFFFF8) == fifo->bytes_requested, HZ/4); // rc: 0 if timed out, else number of jiffies remaining
+  printk("fpc: wait, %d jiffies remain, %.8x bytes tf, %.8x bytes requested\n", rc, read_status(), fifo->bytes_requested);
+  hififo_unmap_sg(fifo, fifo->dma[0]);
+  /*
   while(count != length){
     copy_length = hififo_min(BUFFER_SIZE/2, BUFFER_SIZE - fifo->pointer_in);
     copy_length = hififo_min(copy_length, length-count);
-    retval = wait_ring_from_pc(fifo, copy_length);
-    if(retval < copy_length){
+    rc = wait_ring_from_pc(fifo, copy_length);
+    if(rc < copy_length){
       printk("wait from user failed\n");
       return count;
     }
-    retval = copy_from_user(((void *) fifo->buffer) + fifo->pointer_in, buf + count, copy_length);
-    if(retval != 0){
+    rc = copy_from_user(((void *) fifo->buffer) + fifo->pointer_in, buf + count, copy_length);
+    if(rc != 0){
       printk("copy from user failed\n");
       return -EFAULT;
     }
@@ -247,7 +378,7 @@ static ssize_t hififo_write(struct file *filp,
     fifo->pointer_in += copy_length;
     fifo->pointer_in &= (BUFFER_SIZE - 1);
     fifo->bytes_requested += copy_length;
-  }
+    }*/
   return length;
 }
 
@@ -292,7 +423,7 @@ static int hififo_mmap(struct file *file, struct vm_area_struct *vma)
 {
   struct hififo_fifo *fifo = file->private_data;
   unsigned long size;
-  int retval, i;
+  int rc, i;
 
   if (!(vma->vm_flags & VM_SHARED))
     return -EINVAL;
@@ -305,13 +436,13 @@ static int hififo_mmap(struct file *file, struct vm_area_struct *vma)
     return -EINVAL;
 
   for(i=0; i<2; i++){
-    retval = remap_pfn_range(vma,
+    rc = remap_pfn_range(vma,
 			     vma->vm_start + BUFFER_SIZE * i, 
 			     fifo->dma_addr >> PAGE_SHIFT,
 			     BUFFER_SIZE,
 			     vma->vm_page_prot);
-    if(retval)
-      return retval;
+    if(rc)
+      return rc;
   }
   return 0;
 }
@@ -346,7 +477,7 @@ static irqreturn_t hififo_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 
 static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   int i;
-  int retval;
+  int rc;
   dev_t dev = 0;
   char tmpstr[16];
   struct hififo_dev *drvdata;
@@ -358,16 +489,16 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     return -ENOMEM;
   }
     
-  retval = pcim_enable_device(pdev);
-  if(retval){
+  rc = pcim_enable_device(pdev);
+  if(rc){
     printk(KERN_ERR DEVICE_NAME ": pcim_enable_device() failed\n");
-    return retval;
+    return rc;
   }
 
-  retval = pci_request_regions(pdev, DEVICE_NAME);
-  if(retval < 0){
+  rc = pci_request_regions(pdev, DEVICE_NAME);
+  if(rc < 0){
     printk(KERN_ERR DEVICE_NAME ": pci_request_regions() failed\n");
-    return retval;
+    return rc;
   }
 
   printk(KERN_INFO DEVICE_NAME ": Found Harmon Instruments PCI Express interface board\n");
@@ -379,16 +510,16 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 
   pci_set_consistent_dma_mask(pdev, 0xFFFFFFFFFFFFFFFF);
 
-  retval = pci_enable_msi(pdev);
-  if(retval < 0){
+  rc = pci_enable_msi(pdev);
+  if(rc < 0){
     printk(KERN_ERR DEVICE_NAME ": pci_enable_msi() failed\n");
-    return retval;
+    return rc;
   }
 
-  retval = devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) hififo_interrupt, 0 /* flags */, DEVICE_NAME, drvdata);
-  if(retval){
+  rc = devm_request_irq(&pdev->dev, pdev->irq, (irq_handler_t) hififo_interrupt, 0 /* flags */, DEVICE_NAME, drvdata);
+  if(rc){
     printk(KERN_ERR DEVICE_NAME ": request_irq() failed\n");
-    return retval;
+    return rc;
   }
 
   drvdata->pio_reg_base = (u64 *) pcim_iomap(pdev, 0, 0);
@@ -413,10 +544,10 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
   udelay(10); /* wait for completion of anything that was running */
   writereg(drvdata, 0xFFFF, REG_RESET_CLEAR);
 
-  retval = alloc_chrdev_region(&dev, 0, drvdata->nfifos, DEVICE_NAME);
-  if (retval) {
+  rc = alloc_chrdev_region(&dev, 0, drvdata->nfifos, DEVICE_NAME);
+  if (rc) {
     printk(KERN_ERR DEVICE_NAME ": alloc_chrdev_region() failed\n");
-    return retval;
+    return rc;
   }
 
   drvdata->major = MAJOR(dev);
@@ -441,14 +572,15 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 
     fifo->cdev.owner = THIS_MODULE;
 
-    retval = cdev_add (&fifo->cdev, MKDEV(MAJOR(dev), i), 1);
-    if (retval){
-      printk(KERN_NOTICE DEVICE_NAME ": Error %d adding cdev\n", retval);
-      return retval;
+    rc = cdev_add (&fifo->cdev, MKDEV(MAJOR(dev), i), 1);
+    if (rc){
+      printk(KERN_NOTICE DEVICE_NAME ": Error %d adding cdev\n", rc);
+      return rc;
     }
     sprintf(tmpstr, "hififo_%d_%d", hififo_count, i);
     device_create(hififo_class, NULL, MKDEV(MAJOR(dev), i), NULL, tmpstr);
     fifo->n = i;
+    fifo->pdev = pdev;
     fifo->pio_reg_base = drvdata->pio_reg_base;
     fifo->local_base = drvdata->pio_reg_base+8+i;
     init_waitqueue_head(&fifo->queue);
