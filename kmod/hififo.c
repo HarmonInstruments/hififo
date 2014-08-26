@@ -83,7 +83,8 @@ struct hififo_fifo {
   u64 *pio_reg_base;
   u64 *local_base;
   struct cdev cdev;
-  wait_queue_head_t queue;
+  wait_queue_head_t queue_dma;
+  wait_queue_head_t queue_count;
   u32 bytes_requested;
   spinlock_t lock_open;
   int n; // fifo number
@@ -218,8 +219,12 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, const
   printk ("pci_map_sg returned %d\n", rc);
   dma->mapped = 1;
   hififo_generate_descriptor(dma, rc);
-  // wait for ready
-  printk("doing reqeset, addr = 0x%.16llx\n", dma->req_dma_addr);
+  rc = wait_event_interruptible_timeout(fifo->queue_dma,
+					(le32_to_cpu(readl(fifo->local_base)) & 0x1),
+					fifo->timeout);
+  printk("hififo %d: wait dma ready, %d jiffies remain\n", fifo->n, rc);
+  // check rc
+  printk("hififo %d: doing request, addr = 0x%.16llx\n", fifo->n, dma->req_dma_addr);
   writeq(cpu_to_le64(dma->req_dma_addr | 4), fifo->local_base);
   fifo->bytes_requested += length;
   printk("end gup\n");
@@ -235,8 +240,8 @@ static int hififo_bytes_remaining(struct hififo_fifo *fifo, struct hififo_dma *d
 static int hififo_wait(struct hififo_fifo *fifo, struct hififo_dma *dma){
   int rc;
   writeq(cpu_to_le64(3 | fifo->bytes_requested), fifo->local_base);
-  rc = wait_event_interruptible_timeout(fifo->queue, hififo_bytes_remaining(fifo, dma) <= 0, fifo->timeout); // rc: 0 if timed out, else number of jiffies remaining
-  printk("fpc: wait, %d jiffies remain, %.8x bytes tf, %.8x bytes requested\n", rc, le32_to_cpu(readl(fifo->local_base)), fifo->bytes_requested);
+  rc = wait_event_interruptible_timeout(fifo->queue_count, hififo_bytes_remaining(fifo, dma) <= 0, fifo->timeout); // rc: 0 if timed out, else number of jiffies remaining
+  printk("hififo %d: wait, %d jiffies remain, %.8x bytes tf, %.8x bytes requested\n", fifo->n, rc, le32_to_cpu(readl(fifo->local_base)), fifo->bytes_requested);
   return rc;
 }
 
@@ -356,8 +361,12 @@ static irqreturn_t hififo_interrupt(int irq, void *dev_id, struct pt_regs *regs)
   int i;
   printk("hififo interrupt: sr = %x\n", sr);
   for(i=0; i<MAX_FIFOS; i++){
-    if((sr & (0x3<<(2*i))) && (drvdata->fifo[i] != NULL))
-      wake_up_all(&drvdata->fifo[i]->queue);
+    if(drvdata->fifo[i] != NULL){
+      if(sr & (0x1<<(2*i)))
+	wake_up_all(&drvdata->fifo[i]->queue_count);
+      if(sr & (0x2<<(2*i)))
+	wake_up_all(&drvdata->fifo[i]->queue_dma);
+    }
   }
   return IRQ_HANDLED;
 }
@@ -471,7 +480,8 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     fifo->pdev = pdev;
     fifo->pio_reg_base = drvdata->pio_reg_base;
     fifo->local_base = drvdata->pio_reg_base+8+i;
-    init_waitqueue_head(&fifo->queue);
+    init_waitqueue_head(&fifo->queue_dma);
+    init_waitqueue_head(&fifo->queue_count);
     fifo->bytes_requested = 0;
   }
   hififo_count++;
