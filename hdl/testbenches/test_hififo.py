@@ -158,40 +158,40 @@ p.write(0xFF, 4*8)
 for i in range(64*32):
     p.completion_data[0x21000/8+i] = i | 0xDEADBEEF00000000
     p.write_data_expected[0x21000/8+i] = i | 0xDEADBEEF00000000
-p.completion_data[0] = 1 | 0x200
-p.completion_data[1] = 2 | 0x21000
-p.completion_data[2] = 1 | 0x200
-p.completion_data[3] = 2 | 0x21200
+p.completion_data[0] = 2 | 0x21000
+p.completion_data[1] = 3 | 0x200
+p.completion_data[2] = 2 | 0x21200
+p.completion_data[3] = 3 | 0x200
 p.completion_data[63] = 4 | 0x200
-p.completion_data[64] = 1 | 0x3C00
-p.completion_data[65] = 2 | 0x21400 | 0x100000000
+p.completion_data[64] = 2 | 0x21400 | 0x100000000
+p.completion_data[65] = 3 | 0x3C00
 p.write_fifo(fifo=0, address=0xDEAD00000000)
 
 # TPC
 for i in range(0x8000/8):
     p.write_data_expected[0x10000/8+i] = i
-p.completion_data[256] = 1 | 0x2000
-p.completion_data[257] = 2 | 0x300010000
-p.completion_data[258] = 1 | 0x2000
-p.completion_data[259] = 2 | 0x12000
-p.completion_data[260] = 1 | 0x4000
-p.completion_data[261] = 2 | 0x14000
+p.completion_data[256] = 2 | 0x300010000
+p.completion_data[257] = 3 | 0x2000
+p.completion_data[258] = 2 | 0x12000
+p.completion_data[259] = 3 | 0x2000
+p.completion_data[260] = 2 | 0x14000
+p.completion_data[261] = 3 | 0x4000
 p.write_fifo(fifo=6, address=0x800)
 for i in range(30):
-    p.completion_data[512+2*i] = 1 | 0x200
-    p.completion_data[513+2*i] = 2 | 0x21000+0x200*i
+    p.completion_data[512+2*i] = 2 | 0x21000+0x200*i
+    p.completion_data[513+2*i] = 3 | 0x200
 p.completion_data[512+63] = 4 | 0x1200;
 for i in range(30):
-    p.completion_data[512+64+2*i] = 1 | 0x200
-    p.completion_data[513+64+2*i] = 2 | 0x21000+0x200*(i+30)
+    p.completion_data[512+64+2*i] = 2 | 0x21000+0x200*(i+30)
+    p.completion_data[513+64+2*i] = 3 | 0x200
 p.completion_data[512+64+63] = 4 | 0x1400;
 for i in range(30):
-    p.completion_data[512+128+2*i] = 1 | 0x200
-    p.completion_data[513+128+2*i] = 2 | 0x21000+0x200*(i+60)
+    p.completion_data[512+128+2*i] = 2 | 0x21000+0x200*(i+60)
+    p.completion_data[513+128+2*i] = 3 | 0x200
     p.completion_data[512+128+63] = 4 | 0x1600;
 for i in range(6):
-    p.completion_data[512+192+2*i] = 1 | 0x200
-    p.completion_data[513+192+2*i] = 2 | 0x21000+0x200*(i+90)
+    p.completion_data[512+192+2*i] = 2 | 0x21000+0x200*(i+90)
+    p.completion_data[513+192+2*i] = 3 | 0x200
 for i in range(96):
     print i, hex(int(p.completion_data[512+i]))
 p.write_fifo(fifo=4, address=0x1000)
@@ -201,7 +201,7 @@ p.read(1*8, 3)
 p.read(2*8, 4)
     
 def hififo_v(clock, reset, t_tready, r_tvalid, r_tlast, r_tdata, interrupt, t_tdata, t_1dw, t_tlast, t_tvalid):
-    r = os.system ("iverilog -DSIM -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../top.v")
+    r = os.system ("iverilog -DSIM -o tb_hififo.vvp tb_hififo.v ../hififo.v ../hififo_tpc_fifo.v ../hififo_fpc_fifo.v ../sync.v ../pcie_rx.v ../pcie_tx.v ../sequencer.v ../fifo.v ../block_ram.v ../top.v ../hififo_fetch_descriptor.v")
     if r!=0:
         print "iverilog returned ", r
         exit(1)
@@ -239,7 +239,7 @@ def _test_hififo():
         for i in range(10):
             yield clock.negedge
         reset.next = 0
-        for i in range(0,12000,1):
+        for i in range(0,18000,1):
             yield clock.posedge
         raise StopSimulation
     

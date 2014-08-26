@@ -20,91 +20,54 @@
 
 module hififo_tpc_fifo
   (
-   input 	    clock,
-   input 	    reset,
-   input [15:0]     pci_id,
-   output [31:0]    status,
-   output [1:0]     interrupt,
+   input 	 clock,
+   input 	 reset,
+   output [31:0] status,
+   output [1:0]  interrupt,
    // writes and read completions
-   input [63:0]     rx_data,
-   input 	    rx_data_valid,
-   input 	    rc_last,
+   input [63:0]  rx_data,
+   input 	 rx_data_valid,
+   input 	 rc_last,
    // to PCI TX
-   output 	    rr_valid,
-   output [63:0]    rr_addr,
-   input 	    rr_ready,
-   output reg 	    wr_valid = 0,
-   input 	    wr_ready,
-   output [63:0]    wr_data,
-   output [63:0]    wr_addr,
-   output reg 	    wr_last,
-   output [4:0]     wr_count,
+   output 	 rr_valid,
+   output [63:0] rr_addr,
+   input 	 rr_ready,
+   output reg 	 wr_valid = 0,
+   input 	 wr_ready,
+   output [63:0] wr_data,
+   output [63:0] wr_addr,
+   output reg 	 wr_last,
+   output [4:0]  wr_count,
    // FIFO
-   input 	    fifo_clock,
-   input 	    fifo_write,
-   input [63:0]     fifo_data,
-   output 	    fifo_ready
+   input 	 fifo_clock,
+   input 	 fifo_write,
+   input [63:0]  fifo_data,
+   output 	 fifo_ready
    );
 
-   reg [60:0] 	    addr; // 8 bytes
-   reg [19:0] 	    count; // 8 bytes
-   reg [4:0] 	    state = 0;
-   reg [28:0] 	    byte_count;
-   reg 		    enabled;
-   reg 		    reset_or_abort;
-         
-   reg [28:0] 	    interrupt_matchval = 0;
-
-   wire 	    o_almost_empty;
-   wire [63:0] 	    desc_data;
-   wire 	    desc_ready, desc_addr_ready;
-   wire             desc_read = desc_ready & ~enabled;
-   wire 	    write_interrupt = rx_data_valid && (rx_data[2:0] == 3);
-   wire 	    write_abort = rx_data_valid && (rx_data[2:0] == 5);
-   wire 	    abort;
+   reg [4:0] 	 state = 0;
    
-   wire 	    fifo_read = (wr_ready && wr_valid) || ((state != 0) && (state < 30));
-      
-   assign wr_addr = {addr, 3'd0};
-   assign status = {byte_count, 2'd0, desc_addr_ready};
+   wire 	 o_almost_empty;
+   wire 	 request_valid;
+   wire 	 fifo_read = (wr_ready && wr_valid) || ((state != 0) && (state < 30));
+   
    assign wr_count = 16;
-
+   
    always @ (posedge clock)
      begin
-	reset_or_abort <= reset | abort;
-	byte_count <= reset ? 1'b0 : byte_count + fifo_read;
-	wr_valid <= reset ? 1'b0 : (((state == 0) || (state > 29)) && enabled && ~o_almost_empty && (count != 0));
+	if(reset)
+	  wr_valid <= 1'b0;
+	else
+	  wr_valid <= ((state == 0) || (state > 29)) && request_valid && ~o_almost_empty;
+	wr_last <= state == 29;
 	if(reset)
 	  state <= 1'b0;
 	else if(state == 0)
 	  state <= wr_ready ? 5'd15 : 5'd0;
 	else
 	  state <= state + 1'b1;
-
-	if(write_interrupt)
-	  interrupt_matchval <= rx_data[31:3];
-	
-	if(reset)
-	  enabled <= 1'b0;
-	else if(desc_ready && (desc_data[2:0] == 2))
-	  enabled <= 1'b1;
-	else if(count == 0)
-	  enabled <= 1'b0;
-	wr_last <= state == 29;
-	
-	addr <= (desc_data[2:0] == 2) && ~enabled ? desc_data[63:3] : addr + fifo_read;
-	if(reset_or_abort)
-	  count <= 1'b0;
-	else if(desc_ready && (desc_data[2:0] == 1) && ~enabled)
-	  count <= desc_data[21:3];
-	else
-	  count <= count - fifo_read;
      end
 
-   pulse_stretch stretch_abort(.clock(clock), .in(write_abort), .out(abort));
-   one_shot one_shot_i0(.clock(clock), .in(interrupt_matchval == byte_count), .out(interrupt[0]));
-   one_shot one_shot_i1(.clock(clock), .in(desc_addr_ready), .out(interrupt[1]));
-   
    fwft_fifo #(.NBITS(64)) data_fifo
      (
       .reset(reset),
@@ -119,21 +82,22 @@ module hififo_tpc_fifo
       .o_almost_empty(o_almost_empty)
       );
 
-    hififo_fetch_descriptor fetch_descriptor
+    hififo_fetch_descriptor #(.BS(3)) fetch_descriptor
      (
       .clock(clock),
-      .reset(reset_or_abort),
-      .ready(desc_addr_ready),
-      .write_fifo(rx_data_valid && ((rx_data[2:0] == 1) || (rx_data[2:0] == 2))),
-      .write_desc_addr(rx_data_valid && (rx_data[2:0] == 4)),
+      .reset(reset),
+      .request_count(),
+      .request_addr(wr_addr),
+      .request_valid(request_valid),
+      .request_ack(fifo_read),
+      .wvalid(rx_data_valid),
       .wdata(rx_data),
       .rc_last(rc_last),
       .rr_valid(rr_valid),
       .rr_addr(rr_addr),
       .rr_ready(rr_ready),
-      .desc_ready(desc_ready),
-      .desc_data(desc_data),
-      .desc_read(desc_read)
+      .status(status),
+      .interrupt(interrupt)
       );
 
 endmodule

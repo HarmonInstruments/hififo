@@ -192,7 +192,6 @@ module hififo_pcie
 	      hififo_tpc_fifo tpc_fifo
 		(.clock(clock),
 		 .reset(fifo_reset_sysclock[i]),
-		 .pci_id(pci_id),
 		 .status(status[i]),
 		 .interrupt(interrupt_individual[2*i+1:2*i]),
 		 // write data

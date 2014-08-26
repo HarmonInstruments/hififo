@@ -13,6 +13,7 @@ load:
 	ssh $(HOST) "rm -rf kmod; mkdir kmod"
 	scp Makefile hififo.c vna:kmod
 	ssh $(HOST) "cd kmod; make clean all"
+	ssh root@$(HOST) "echo 128 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"	
 	ssh root@$(HOST) "insmod /home/dlharmon/kmod/hififo.ko"
 dmesg:
 	ssh $(HOST) dmesg
