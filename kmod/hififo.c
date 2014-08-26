@@ -101,6 +101,8 @@ struct hififo_dev {
 static int hififo_open(struct inode *inode, struct file *filp){
   struct hififo_fifo *fifo = container_of(inode->i_cdev, struct hififo_fifo, cdev);
   int i;
+  if (!try_module_get(THIS_MODULE))
+    return -ENODEV;
   if (! spin_trylock(&fifo->lock_open))
     return -EBUSY;
   filp->private_data = fifo;
@@ -114,7 +116,6 @@ static int hififo_open(struct inode *inode, struct file *filp){
     if(fifo->dma[i]->req == NULL)
       goto fail;
   }
-  try_module_get(THIS_MODULE); // increment the usage count
   fifo->timeout = HZ/4;
   return 0;
  fail:
