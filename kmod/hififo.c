@@ -51,7 +51,7 @@ static struct pci_device_id hififo_pci_table[] = {
 };
 
 #define BUFFER_SIZE (4096*1024)
-#define MAX_PAGES 2048
+#define MAX_PAGES 4096 /* Maximum number of pages for one DMA run */
 #define REQ_SIZE (MAX_PAGES * 17)
 
 #define REG_INTERRUPT 0
@@ -63,7 +63,7 @@ static struct pci_device_id hififo_pci_table[] = {
 #define writereg(s, data, addr) (writeq(cpu_to_le64(data), &s->pio_reg_base[(addr)]))
 #define readreg(s, addr) le32_to_cpu(readl(&s->pio_reg_base[(addr)]))
 
-#define DMA_DIRECTION(fifo) (((fifo)->n > 4) ? PCI_DMA_FROMDEVICE : PCI_DMA_TODEVICE)
+#define DMA_DIRECTION(fifo) (((fifo)->n > (MAX_FIFOS/2)) ? PCI_DMA_FROMDEVICE : PCI_DMA_TODEVICE)
 
 static struct class *hififo_class;
 static int hififo_count;
@@ -85,7 +85,7 @@ struct hififo_fifo {
   struct cdev cdev;
   wait_queue_head_t queue;
   u32 bytes_requested;
-  int is_open;
+  spinlock_t lock_open;
   int n; // fifo number
   int timeout;
 };
@@ -98,51 +98,46 @@ struct hififo_dev {
   int idreg;
 };
 
-// TODO: make this thread safe
-
 static int hififo_open(struct inode *inode, struct file *filp){
   struct hififo_fifo *fifo = container_of(inode->i_cdev, struct hififo_fifo, cdev);
   int i;
-  filp->private_data = fifo;
-  printk("hififo: open\n");
-  if (fifo->is_open)
+  if (! spin_trylock(&fifo->lock_open))
     return -EBUSY;
-
+  filp->private_data = fifo;
+  printk(KERN_INFO "hififo %d: open\n", fifo->n);
   fifo->dma[0] = kcalloc(2, sizeof(struct hififo_dma), GFP_KERNEL);
   if(fifo->dma[0] == NULL)
-    return -ENOMEM;
+    goto fail;
   fifo->dma[1] = ((void *) fifo->dma[0]) + sizeof(struct hififo_dma);
   for(i=0; i<2; i++){
     fifo->dma[i]->req = pci_alloc_consistent(fifo->pdev, REQ_SIZE, &fifo->dma[i]->req_dma_addr);
-    if(fifo->dma[i]->req == NULL){
-      printk("Failed to allocate request DMA buffer\n");
+    if(fifo->dma[i]->req == NULL)
       goto fail;
-    }
   }
-  fifo->is_open++;
   try_module_get(THIS_MODULE); // increment the usage count
   fifo->timeout = HZ/4;
   return 0;
  fail:
-  for(i=0; i<2; i++){
+  for(i=0; (i<2) && (fifo->dma[0] != NULL); i++){
     if(fifo->dma[i]->req != NULL)
       pci_free_consistent(fifo->pdev, REQ_SIZE, fifo->dma[i]->req, fifo->dma[i]->req_dma_addr);
   }
   kfree(fifo->dma[0]);
+  spin_unlock(&fifo->lock_open);
   return -ENOMEM;
 }
 
 static int hififo_release(struct inode *inode, struct file *filp){
   struct hififo_fifo *fifo = filp->private_data;
   int i;
-  fifo->is_open--;
   for(i=0; i<2; i++){
     if(fifo->dma[i]->req != NULL)
       pci_free_consistent(fifo->pdev, REQ_SIZE, fifo->dma[i]->req, fifo->dma[i]->req_dma_addr);
   }
   kfree(fifo->dma[0]);
   module_put(THIS_MODULE); // decrement the usage count
-  printk("hififo: close\n");
+  printk("hififo %d: close\n", fifo->n);
+  spin_unlock(&fifo->lock_open);
   return 0;
 }
 
@@ -471,6 +466,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     sprintf(tmpstr, "hififo_%d_%d", hififo_count, i);
     device_create(hififo_class, NULL, MKDEV(MAJOR(dev), i), NULL, tmpstr);
     fifo->n = i;
+    spin_lock_init(&fifo->lock_open);
     fifo->pdev = pdev;
     fifo->pio_reg_base = drvdata->pio_reg_base;
     fifo->local_base = drvdata->pio_reg_base+8+i;
