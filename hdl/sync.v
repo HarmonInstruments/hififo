@@ -28,3 +28,35 @@ module sync
      sreg <= {sreg[1:0], in};
    assign out = sreg[2];
 endmodule
+
+module one_shot
+  (
+   input      clock,
+   input      in,
+   output reg out = 0
+   );
+   reg 	      in_prev = 0;
+   always @(posedge clock)
+     begin
+	in_prev <= in;
+	out <= in & ~in_prev;
+     end
+endmodule
+
+module pulse_stretch
+  (
+   input      clock,
+   input      in,
+   output reg out = 0
+   );
+   parameter NB=3;
+   reg [NB-1:0] count = 0;
+   always @(posedge clock)
+     begin
+	if(in)
+	  count <= 1'b1;
+	else
+	  count <= count + (count != 0);
+	out <= in | (count != 0);
+     end
+endmodule

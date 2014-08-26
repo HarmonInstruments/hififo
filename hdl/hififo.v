@@ -237,15 +237,8 @@ module hififo_pcie
 	 else
 	   begin
 	      wire reset_sync_out;
-	      reg [3:0] reset_count = 0;
-	      reg 	reset_out = 1;
-	      assign fifo_reset[i] = reset_out;
-	      always @ (posedge fifo_clock[i])
-		begin
-		   reset_out <= reset_count != 15;
-		   reset_count <= reset_sync_out ? 4'd0 : reset_count + (reset_count != 15);
-		end
 	      sync sync(.clock(fifo_clock[i]), .in(fifo_reset_sysclock[i]), .out(reset_sync_out));
+	      pulse_stretch #(.NB(4)) stretch_reset(.clock(fifo_clock[i]), .in(reset_sync_out), .out(fifo_reset[i]));
 	   end
       end
    endgenerate
