@@ -24,7 +24,7 @@ module hififo_tpc_fifo
    input 	    reset,
    input [15:0]     pci_id,
    output [31:0]    status,
-   output reg [1:0] interrupt,
+   output [1:0]     interrupt,
    // writes and read completions
    input [63:0]     rx_data,
    input 	    rx_data_valid,
@@ -50,12 +50,10 @@ module hififo_tpc_fifo
    reg [19:0] 	    count; // 8 bytes
    reg [4:0] 	    state = 0;
    reg [28:0] 	    byte_count;
-   reg 		    desc_addr_ready_prev;
    reg 		    enabled;
-      
+   reg 		    reset_or_abort;
+         
    reg [28:0] 	    interrupt_matchval = 0;
-   reg [1:0] 	    interrupt_match;
-   reg 		    interrupt_0_enable = 0;
 
    wire 	    o_almost_empty;
    wire [63:0] 	    desc_data;
@@ -63,15 +61,17 @@ module hififo_tpc_fifo
    wire             desc_read = desc_ready & ~enabled;
    wire 	    write_interrupt = rx_data_valid && (rx_data[2:0] == 3);
    wire 	    write_abort = rx_data_valid && (rx_data[2:0] == 5);
+   wire 	    abort;
    
    wire 	    fifo_read = (wr_ready && wr_valid) || ((state != 0) && (state < 30));
       
    assign wr_addr = {addr, 3'd0};
    assign status = {byte_count, 2'd0, desc_addr_ready};
    assign wr_count = 16;
-                  
+
    always @ (posedge clock)
      begin
+	reset_or_abort <= reset | abort;
 	byte_count <= reset ? 1'b0 : byte_count + fifo_read;
 	wr_valid <= reset ? 1'b0 : (((state == 0) || (state > 29)) && enabled && ~o_almost_empty && (count != 0));
 	if(reset)
@@ -81,6 +81,9 @@ module hififo_tpc_fifo
 	else
 	  state <= state + 1'b1;
 
+	if(write_interrupt)
+	  interrupt_matchval <= rx_data[31:3];
+	
 	if(reset)
 	  enabled <= 1'b0;
 	else if(desc_ready && (desc_data[2:0] == 2))
@@ -90,21 +93,18 @@ module hififo_tpc_fifo
 	wr_last <= state == 29;
 	
 	addr <= (desc_data[2:0] == 2) && ~enabled ? desc_data[63:3] : addr + fifo_read;
-	count <= (desc_data[2:0] == 1) && ~enabled ? desc_data[21:3] : count - fifo_read;
-
-	// interrupt
-	if(reset | interrupt[0])
-	  interrupt_0_enable <= 1'b0;
-	else if(write_interrupt)
-	  interrupt_0_enable <= 1'b1;
-	if(write_interrupt)
-	  interrupt_matchval <= rx_data[31:3];
-	interrupt_match <= {interrupt_match[0], (interrupt_matchval == byte_count)};
-	desc_addr_ready_prev <= desc_addr_ready;
-	interrupt[0] <= interrupt_0_enable && (interrupt_match == 2'b01);
-	interrupt[1] <= desc_addr_ready & ~desc_addr_ready_prev;
+	if(reset_or_abort)
+	  count <= 1'b0;
+	else if(desc_ready && (desc_data[2:0] == 1) && ~enabled)
+	  count <= desc_data[21:3];
+	else
+	  count <= count - fifo_read;
      end
-      
+
+   pulse_stretch stretch_abort(.clock(clock), .in(write_abort), .out(abort));
+   one_shot one_shot_i0(.clock(clock), .in(interrupt_matchval == byte_count), .out(interrupt[0]));
+   one_shot one_shot_i1(.clock(clock), .in(desc_addr_ready), .out(interrupt[1]));
+   
    fwft_fifo #(.NBITS(64)) data_fifo
      (
       .reset(reset),
@@ -122,7 +122,7 @@ module hififo_tpc_fifo
     hififo_fetch_descriptor fetch_descriptor
      (
       .clock(clock),
-      .reset(reset),
+      .reset(reset_or_abort),
       .ready(desc_addr_ready),
       .write_fifo(rx_data_valid && ((rx_data[2:0] == 1) || (rx_data[2:0] == 2))),
       .write_desc_addr(rx_data_valid && (rx_data[2:0] == 4)),
