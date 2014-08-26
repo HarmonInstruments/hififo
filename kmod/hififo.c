@@ -51,23 +51,17 @@ static struct pci_device_id hififo_pci_table[] = {
 };
 
 #define BUFFER_SIZE (4096*1024)
-#define MAX_PAGES 1024
+#define MAX_PAGES 2048
 #define REQ_SIZE (MAX_PAGES * 17)
 
 #define REG_INTERRUPT 0
 #define REG_ID 1
-#define REG_COUNT 2
 #define REG_RESET 3
 #define REG_RESET_SET 3
 #define REG_RESET_CLEAR 4
 
 #define writereg(s, data, addr) (writeq(cpu_to_le64(data), &s->pio_reg_base[(addr)]))
 #define readreg(s, addr) le32_to_cpu(readl(&s->pio_reg_base[(addr)]))
-
-#define write_count(count) (writereg(fifo, count, REG_COUNT))
-#define write_status(status) (writeq(cpu_to_le64((status) | 3), fifo->local_base))
-#define write_req(s, req) (writeq(cpu_to_le64(req), s->local_base))
-#define read_status() (le32_to_cpu(readl(fifo->local_base)))
 
 #define DMA_DIRECTION(fifo) (((fifo)->n > 4) ? PCI_DMA_FROMDEVICE : PCI_DMA_TODEVICE)
 
@@ -230,23 +224,23 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, const
   hififo_generate_descriptor(dma, rc);
   // wait for ready
   printk("doing reqeset, addr = 0x%.16llx\n", dma->req_dma_addr);
-  write_req(fifo, dma->req_dma_addr | 4);
+  writeq(cpu_to_le64(dma->req_dma_addr | 4), fifo->local_base);
   fifo->bytes_requested += length;
   printk("end gup\n");
   return 0;
 }
 
 static int hififo_bytes_remaining(struct hififo_fifo *fifo, struct hififo_dma *dma){
-  int rv = (int) (fifo->bytes_requested - (read_status() & 0xFFFFFFF8));
+  int rv = (int) (fifo->bytes_requested - (le32_to_cpu(readl(fifo->local_base)) & 0xFFFFFFF8));
   printk("fifo %d, %d bytes remain\n", fifo->n, rv);
   return rv;
 }
 
 static int hififo_wait(struct hififo_fifo *fifo, struct hififo_dma *dma){
   int rc;
-  write_status(3 | fifo->bytes_requested);
+  writeq(cpu_to_le64(3 | fifo->bytes_requested), fifo->local_base);
   rc = wait_event_interruptible_timeout(fifo->queue, hififo_bytes_remaining(fifo, dma) <= 0, fifo->timeout); // rc: 0 if timed out, else number of jiffies remaining
-  printk("fpc: wait, %d jiffies remain, %.8x bytes tf, %.8x bytes requested\n", rc, read_status(), fifo->bytes_requested);
+  printk("fpc: wait, %d jiffies remain, %.8x bytes tf, %.8x bytes requested\n", rc, le32_to_cpu(readl(fifo->local_base)), fifo->bytes_requested);
   return rc;
 }
 
@@ -266,7 +260,6 @@ static ssize_t hififo_read(struct file *filp,
     printk("hififo_read: invalid length");
     return -EINVAL;
   }
-
   while(count != length){
     copy_length = hififo_min(MAX_PAGES*PAGE_SIZE, length-count);
     // do zero copy
@@ -317,9 +310,9 @@ static long hififo_ioctl (struct file *file, unsigned int command, unsigned long
   switch(command) {
     // get info
   case _IOR(HIFIFO_IOC_MAGIC, IOC_INFO ,u64[8]):
-    tmp[0] = BUFFER_SIZE;
-    tmp[1] = BUFFER_SIZE;
-    //tmp[2] = fifo->pointer_in;
+    tmp[0] = 0;
+    tmp[1] = 0;
+    tmp[2] = 0;
     tmp[3] = 0;
     tmp[4] = 0;
     tmp[5] = 0;
@@ -334,7 +327,6 @@ static long hififo_ioctl (struct file *file, unsigned int command, unsigned long
     // accept bytes from to PC FIFO
   case _IO(HIFIFO_IOC_MAGIC, IOC_PUT_TO_PC):
     //fifo->pointer += arg;
-    //local_writereg(fifo->pointer + (BUFFER_SIZE - 128), REG_LOCAL_COUNT);
     return 0;
     // get bytes available in from PC FIFO
   case _IO(HIFIFO_IOC_MAGIC, IOC_GET_FROM_PC):
@@ -387,7 +379,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id){
     printk(KERN_ERR DEVICE_NAME "failed to alloc drvdata\n");
     return -ENOMEM;
   }
-    
+  
   rc = pcim_enable_device(pdev);
   if(rc){
     printk(KERN_ERR DEVICE_NAME ": pcim_enable_device() failed\n");
