@@ -194,14 +194,14 @@ static void hififo_unmap_sg(struct hififo_fifo *fifo, struct hififo_dma *dma){
 static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, const void *buf, size_t length){
   int i, rc;
   dma->n_pages = DIV_ROUND_UP(length, PAGE_SIZE);
-  printk ("start gup\n");
+  printk ("hififo %d: start gup\n", fifo->n);
   rc = get_user_pages_fast((loff_t)buf,
 			   dma->n_pages,
 			   fifo->n > 4 ? 1 : 0,
 			   dma->page_list);
   if (rc < dma->n_pages) {
     dma->n_pages = rc;
-    printk("get user pages failed with %d\n", rc);
+    printk("hififo %d: get user pages failed with %d\n", fifo->n, rc);
     if(rc > 0)
       hififo_unmap_sg(fifo, dma);
     dma->n_pages = 0;
@@ -216,7 +216,7 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, const
     sg_set_page(&dma->sglist[dma->n_pages-1], dma->page_list[dma->n_pages-1], length - ((dma->n_pages-1)*PAGE_SIZE), 0);
   
   rc = pci_map_sg(fifo->pdev, dma->sglist, dma->n_pages, DMA_DIRECTION(fifo));
-  printk ("pci_map_sg returned %d\n", rc);
+  printk ("hififo %d: pci_map_sg returned %d\n", fifo->n, rc);
   dma->mapped = 1;
   hififo_generate_descriptor(dma, rc);
   rc = wait_event_interruptible_timeout(fifo->queue_dma,
@@ -227,13 +227,13 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, const
   printk("hififo %d: doing request, addr = 0x%.16llx\n", fifo->n, dma->req_dma_addr);
   writeq(cpu_to_le64(dma->req_dma_addr | 4), fifo->local_base);
   fifo->bytes_requested += length;
-  printk("end gup\n");
+  printk("hififo %d: end gup\n", fifo->n);
   return 0;
 }
 
 static int hififo_bytes_remaining(struct hififo_fifo *fifo, struct hififo_dma *dma){
   int rv = (int) (fifo->bytes_requested - (le32_to_cpu(readl(fifo->local_base)) & 0xFFFFFFF8));
-  printk("fifo %d, %d bytes remain\n", fifo->n, rv);
+  printk("hififo %d, %d bytes remain\n", fifo->n, rv);
   return rv;
 }
 
@@ -283,7 +283,7 @@ static ssize_t hififo_write(struct file *filp,
   size_t count = 0;
   size_t copy_length = 0;
   int rc;
-  printk("fpc: write, %x bytes, addr = 0x%p\n", (int) length, buf);
+  printk("hififo %d: write, %x bytes, addr = 0x%p\n", fifo->n, (int) length, buf);
   if((buf == NULL) || (length == 0))
     return -EINVAL;
   if((((size_t) buf) & 0xFFF) != 0)
