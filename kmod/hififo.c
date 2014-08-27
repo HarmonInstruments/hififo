@@ -56,7 +56,7 @@ static struct pci_device_id hififo_pci_table[] = {
   {0,}
 };
 
-#define BUFFER_SIZE (4096*1024)
+#define BUFFER_SIZE (1024*1024)
 #define MAX_PAGES 4096 /* Maximum number of pages for one DMA run */
 #define REQ_SIZE (MAX_PAGES * 17)
 
@@ -79,6 +79,7 @@ struct hififo_dma {
   struct page * page_list[MAX_PAGES];
   dma_addr_t req_dma_addr;
   u64 *req;
+  u32 bytes_requested;
   int n_pages;
   int mapped;
 };
@@ -86,6 +87,8 @@ struct hififo_dma {
 struct hififo_fifo {
   u64 *pio_reg_base;
   u64 *local_base;
+  u64 *buffer;
+  dma_addr_t buffer_dma_addr;
   struct pci_dev *pdev;
   struct hififo_dma * dma[2];
   struct cdev cdev;
@@ -189,6 +192,8 @@ static int hififo_generate_descriptor(struct hififo_dma * dma, int sg_count)
 /* unmap and unpin pages */
 static void hififo_unmap_sg(struct hififo_fifo *fifo, struct hififo_dma *dma){
   int i;
+  if(dma == NULL)
+    return;
   if(dma->mapped)
     pci_unmap_sg(fifo->pdev, dma->sglist, dma->n_pages, DMA_DIRECTION(fifo));
   dma->mapped = 0;
@@ -203,7 +208,7 @@ static void hififo_unmap_sg(struct hififo_fifo *fifo, struct hififo_dma *dma){
 }
 
 /* map and pin user pages */
-static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, const void *buf, size_t length){
+static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, void *buf, size_t length){
   int i, rc;
   dma->n_pages = DIV_ROUND_UP(length, PAGE_SIZE);
   printk ("hififo %d: start gup\n", fifo->n);
@@ -237,43 +242,65 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, const
   // check rc
   writeq(cpu_to_le64(HIFIFO_DESCRIPTOR(dma->req_dma_addr)), fifo->local_base);
   fifo->bytes_requested += length;
+  dma->bytes_requested = fifo->bytes_requested;
   printk("hififo %d: end gup, doing request, addr = 0x%.16llx, %d jiffies remain\n", fifo->n, dma->req_dma_addr, rc);
   return 0;
 }
 
-static int hififo_bytes_remaining(struct hififo_fifo *fifo, struct hififo_dma *dma){
-  int rv = (int) (fifo->bytes_requested - (le32_to_cpu(readl(fifo->local_base)) & 0xFFFFFFF8));
+static s32 hififo_bytes_remaining(struct hififo_fifo *fifo, struct hififo_dma *dma){
+  s32 rv = (s32) (dma->bytes_requested - (le32_to_cpu(readl(fifo->local_base)) & 0xFFFFFFF8));
   printk("hififo %d, %d bytes remain\n", fifo->n, rv);
   return rv;
 }
 
 static int hififo_wait(struct hififo_fifo *fifo, u32 tag){
   int rc;
+  s32 requests_outstanding = (s32) (tag - fifo->n_completed);
   struct hififo_dma * dma = fifo->dma[(tag-1) & 1];
-  if(tag == fifo->n_completed)
+  if(requests_outstanding < 1)
     return 0;
-  writeq(HIFIFO_MATCH(fifo->bytes_requested), fifo->local_base);
+  writeq(HIFIFO_MATCH(dma->bytes_requested), fifo->local_base);
   rc = wait_event_interruptible_timeout(fifo->queue_count,
 					hififo_bytes_remaining(fifo, dma) <= 0, 
 					fifo->timeout); // rc: 0 if timed out, else number of jiffies remaining
   printk("hififo %d: wait, %d jiffies remain, %.8x bytes tf, %.8x bytes requested\n", fifo->n, rc, le32_to_cpu(readl(fifo->local_base)), fifo->bytes_requested);
   if(rc <= 0){
-    printk("hififo %d: FAILED to wait for DMA\n", fifo->n);
+    printk("hififo %d: TIMED OUT waiting for DMA\n", fifo->n);
     return -EAGAIN;
   }
-  while(fifo->n_completed != tag){
-    hififo_unmap_sg(fifo, fifo->dma[fifo->n_completed & 0x01]);
-    fifo->n_completed++;  
-  }
+  while(requests_outstanding--)
+    hififo_unmap_sg(fifo, fifo->dma[fifo->n_completed++ & 0x01]);
   return 0;
 }
 
 /* abort any pending transfers */
 static void hififo_abort(struct hififo_fifo *fifo){
   writeq(cpu_to_le64(HIFIFO_ABORT(1)), fifo->local_base);
-  udelay(100);
+  udelay(100); // allow pending DMA to complete
   writeq(cpu_to_le64(HIFIFO_ABORT(0)), fifo->local_base);
   fifo->n_completed = fifo->n_requested;
+  hififo_unmap_sg(fifo, fifo->dma[0]);
+  hififo_unmap_sg(fifo, fifo->dma[1]);
+}
+
+static int hififo_queue_request(struct hififo_fifo *fifo, char * buf, size_t length){
+  int rc;
+  int copy_length;
+  int count = 0;
+  while(count != length){
+    copy_length = hififo_min(MAX_PAGES*PAGE_SIZE, length-count);
+    // do zero copy
+    rc = hififo_wait(fifo, fifo->n_requested - 1);
+    if(rc != 0)
+      return rc;
+    rc = hififo_map_sg(fifo, fifo->dma[fifo->n_requested & 0x01], buf+count, copy_length);
+    if(rc != 0)
+      return rc;
+    count += copy_length;
+    fifo->n_requested++;
+    // abort if timeout
+  }
+  return 0;
 }
 
 static ssize_t hififo_read(struct file *filp,
@@ -281,8 +308,6 @@ static ssize_t hififo_read(struct file *filp,
 			    size_t length,
 			    loff_t * offset){
   struct hififo_fifo *fifo = filp->private_data;
-  size_t count = 0;
-  size_t copy_length;
   int rc;
   if((buf == NULL) || (length == 0))
     return -EINVAL;
@@ -292,18 +317,7 @@ static ssize_t hififo_read(struct file *filp,
     printk("hififo_read: invalid length");
     return -EINVAL;
   }
-  while(count != length){
-    copy_length = hififo_min(MAX_PAGES*PAGE_SIZE, length-count);
-    // do zero copy
-    rc = hififo_map_sg(fifo, fifo->dma[fifo->n_requested & 0x01], buf+count, copy_length);
-    if(rc != 0)
-      return rc;
-    fifo->n_requested++;
-    hififo_wait(fifo, fifo->n_requested - 1);
-    // abort if timeout
-    hififo_unmap_sg(fifo, fifo->dma[fifo->n_completed & 0x01]);
-    count += copy_length;
-  }
+  rc = hififo_queue_request(fifo, buf, length);
   hififo_wait(fifo, fifo->n_requested);
   return length;
 }
@@ -313,8 +327,6 @@ static ssize_t hififo_write(struct file *filp,
 			     size_t length,
 			     loff_t * off){
   struct hififo_fifo *fifo = filp->private_data;
-  size_t count = 0;
-  size_t copy_length = 0;
   int rc;
   printk("hififo %d: write, %x bytes, addr = 0x%p\n", fifo->n, (int) length, buf);
   if((buf == NULL) || (length == 0))
@@ -323,18 +335,7 @@ static ssize_t hififo_write(struct file *filp,
     return -EINVAL;
   if((length&0x7) != 0) /* writes must be a multiple of 8 bytes */
     return -EINVAL;
-
-  while(count != length){
-    copy_length = hififo_min(MAX_PAGES*PAGE_SIZE, length-count);
-    // do zero copy
-    rc = hififo_map_sg(fifo, fifo->dma[fifo->n_requested & 0x01], buf+count, copy_length);
-    if(rc != 0)
-      return rc;
-    fifo->n_requested++;
-    hififo_wait(fifo, fifo->n_requested - 1);
-    // abort if timeout
-    count += copy_length;
-  }
+  rc = hififo_queue_request(fifo, (void *) buf, length);
   hififo_wait(fifo, fifo->n_requested);
   return length;
 }
