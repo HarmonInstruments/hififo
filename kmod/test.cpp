@@ -31,8 +31,8 @@
 using namespace std;
 
 class TimeIt {
+public:
   struct timespec start_time;
- public:
   TimeIt() {
     clock_gettime(CLOCK_REALTIME, &start_time);
   }
@@ -42,21 +42,6 @@ class TimeIt {
     return (stop_time.tv_sec - start_time.tv_sec) + 1e-9 * (stop_time.tv_nsec - start_time.tv_nsec);  
   };
 };
-
-void* operator new(size_t sz) throw (std::bad_alloc)
-{
-  void* mem = malloc(sz);
-  if (mem)
-    return mem;
-  else
-    throw std::bad_alloc();
-}
-
-
-void operator delete(void* ptr) throw()
-{
-  free(ptr);
-}
 
 #define IOC_INFO 0x10
 #define IOC_GET_TO_PC 0x11
@@ -71,14 +56,6 @@ void operator delete(void* ptr) throw()
 struct fifodev
 {
   int fd;
-  uint64_t read_size;
-  uint64_t write_size;
-  uint64_t read_available;
-  uint64_t write_available;
-  uint64_t read_pointer;
-  uint64_t write_pointer;
-  uint64_t read_mask;
-  uint64_t write_mask;
 };
 
 struct fifodev * fifo_open(const char * filename)
@@ -96,26 +73,14 @@ struct fifodev * fifo_open(const char * filename)
     perror("device info ioctl failed");
     goto fail2;
   }
-  f->read_size = tmp[0];
-  f->write_size = tmp[1];
-  f->read_pointer = tmp[2];
-  f->write_pointer = tmp[3];
-  //fprintf(stderr, "read_size = %ld, write_size = %ld\n", f->read_size, f->write_size);
-  
-  /*f->read_base = (uint8_t *) mmap(NULL, 2 * (f->read_size + f->write_size), PROT_READ | PROT_WRITE, MAP_SHARED, f->fd, 0);
-  if(f->read_base == MAP_FAILED) {
-    perror("mmap failed");
-    goto fail2;
-  }
-  */
   return f;
-  //munmap(f->read_base, 2 * (f->read_size + f->write_size));
  fail2:
   close(f->fd);
  fail1:
   free(f);
  fail0:
-  fprintf(stderr, "fifo_open(%s) failed\n", filename);
+  cerr << "fifo_open(" << filename << ") failed\n";
+  //fprintf(stderr, "fifo_open(%s) failed\n", filename);
   return NULL;
 }
 
@@ -125,62 +90,6 @@ void fifo_close(struct fifodev *f){
   free(f);
 }
 
-/* 
- * returns a pointer to a buffer containing at least count
- * bytes from the FIFO or returns NULL if insufficient data
- * is available. Updates f->read_available, can 
- */
-/*void * fifo_read_get(struct fifodev *f, uint64_t count){
-  if(count < f->read_available)
-    return f->read_base + f->read_pointer;
-  unsigned long tmp = ioctl(f->fd, _IO('f', IOC_GET_TO_PC), count);
-  if(tmp < 0){
-    perror("hififo.c: fifo_read_get failed");
-    return NULL;
-  }
-  f->read_available = tmp;
-  if(tmp < count)
-    return NULL;
-  return f->read_base + f->read_pointer;
-}
-
-int fifo_read_free(struct fifodev *f, uint64_t count){
-  f->read_available -= count;
-  f->read_pointer += count;
-  f->read_pointer &= f->read_mask;
-  if(ioctl(f->fd, _IO('f', IOC_PUT_TO_PC), count) != 0){
-    perror("hififo.c: fifo_read_free() failed");
-    return -1;
-  }
-  return 0;
-  }
-
-void * fifo_write_get(struct fifodev *f, uint64_t count){
-  if(count < f->write_available)
-    return f->write_base + f->write_pointer;
-  unsigned long tmp = ioctl(f->fd, _IO('f', IOC_GET_FROM_PC), count);
-  if(tmp < 0){
-    perror("hififo.c: fifo_write_get() failed");
-    return NULL;
-  }
-  f->write_available = tmp;
-  //fprintf(stderr, "fifo_write_get: %lx available\n", tmp);
-  if(tmp < count)
-    return NULL;
-  return f->write_base + f->write_pointer;
-}
-
-uint64_t fifo_write_put(struct fifodev *f, uint64_t count){
-  f->write_available -= count;
-  f->write_pointer += count;
-  f->write_pointer &= f->write_mask;
-  if(ioctl(f->fd, _IO('f', IOC_PUT_FROM_PC), count) != 0){
-    perror("hififo.c: fifo_write_put() failed");
-    return -1;
-  }
-  return 0;
-  }*/
-
 uint64_t fifo_set_timeout(struct fifodev *f, uint64_t timeout){
   if(ioctl(f->fd, _IO('f', IOC_SET_TIMEOUT), timeout) != 0){
     perror("hififo.c: fifo_set_timeout() failed");
@@ -189,109 +98,147 @@ uint64_t fifo_set_timeout(struct fifodev *f, uint64_t timeout){
   return 0;
 }
 
-void writer(struct fifodev *f, size_t count)
-{
-  size_t bs = 1024*512;
-  ssize_t retval;
-  uint64_t wcount = 0xDEADE00000000000;
-  uint64_t *wbuf = (uint64_t *) mmap(NULL, bs*8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE | MAP_HUGETLB, 1, 0);
-  cerr << wbuf << " wbuf\n";
-  if(wbuf == NULL){
-    cerr << "mmap failed\n";
-    return;
+class AlignedMem {
+private:
+  void * buf;
+  size_t len;
+public:
+  AlignedMem(size_t size, int use_hp) {
+    len = size;
+    if(use_hp){
+      buf = (uint64_t *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE | MAP_HUGETLB, 1, 0); 
+      if(buf != MAP_FAILED){
+	return;
+      }
+      cerr << "falling back to regular pages\n";
+    }
+    buf = (uint64_t *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, 1, 0); 
+    if (buf != MAP_FAILED)
+      return;
+    throw std::bad_alloc();
   }
-  //new uint64_t[bs];
+  AlignedMem(size_t size) {
+    AlignedMem{size, 1};
+  }
+  ~AlignedMem(){
+    //cerr << "deallocating\n";
+    munmap(buf, len);
+  }
+  void *addr(){
+    return buf;
+  }
+};
+
+class Hififo {
+public:
+  struct fifodev *fifo;
+  Hififo(const char * filename) {
+    fifo = fifo_open(filename);
+    if(fifo == NULL)
+      throw;
+  }
+  ~Hififo() {
+    cerr << "closing hififo\n";
+    fifo_close(fifo);
+  }
+  int bwrite(const char *buf, size_t count){
+    ssize_t rc = write(fifo->fd, buf, count);
+    if((size_t) rc != count){
+      std::cerr << "failed to write, attempted " << count << " bytes, retval = " << rc << "\n";
+      throw;
+    }
+    return rc;
+  }
+  ssize_t bread(char * buf, size_t count){
+    ssize_t rc = read(fifo->fd, buf, count);
+    if((size_t) rc != count){
+      std::cerr << "failed to read, attempted " << count << " bytes, retval = " << rc << "\n";
+      throw;
+    }
+    return rc;
+  }
+};
+
+void writer(Hififo *f, size_t count, int use_hp)
+{
+  size_t bs = 1024*512*16;
+  uint64_t wcount = 0xDEADE00000000000;
+  AlignedMem mem = {bs*8, use_hp};
+  uint64_t *wbuf = (uint64_t *) mem.addr();
+  for(size_t j=0; j<bs; j++)
+    wbuf[j] = wcount++;
   TimeIt timer{};
   for(uint64_t i=0; i<count; i+=bs){
-    //fprintf(stderr, "writer: i = %lx, rcount = %lx, available = %lx, wbuf = %lx\n", i, rcount, f->write_available, (uint64_t) wbuf);
+    f->bwrite((const char *) wbuf, bs*8);
     for(size_t j=0; j<bs; j++)
       wbuf[j] = wcount++;
-    retval = write(f->fd, wbuf, bs*8);
-    if((size_t) retval != bs*8){
-      std::cerr << "failed to write, attempted " << 8*bs << " bytes, retval = " << retval << "\n";
-      break;
-    }
   }
   auto runtime = timer.elapsed();
   auto speed = count * 8.0e-6 / runtime;
   std::cerr << "wrote " << count*8 << " bytes in " << runtime << " seconds, " << speed << " MB/s\n";
-  //delete[] wbuf;
-  munmap(wbuf, bs);
 };
 
-void checker(struct fifodev *f, size_t count)
+void checker(Hififo *f, size_t count, int use_hp)
 {
   uint64_t expected = 0;
-  size_t bs = 1024*128;
+  size_t bs = 1024*512*8;
   int prints = 0;
-  ssize_t retval;
-  uint64_t *buf = new uint64_t[bs];
+  AlignedMem mem = {bs*8, use_hp};
+  uint64_t *buf = (uint64_t *) mem.addr();
   TimeIt timer{};
   for(uint64_t i=0; i<count; i+=bs){
-    retval = read(f->fd, buf, bs*8);
-    if((size_t) retval != bs*8){
-      std::cerr << "failed to read, attempted " << 8*bs << " bytes, retval = " << retval << "\n";
-      break;
-    }
+    f->bread((char *) buf, bs*8);
     if(i == 0)
       expected = buf[0];
     for(unsigned int j=0; j<bs; j++){
       if((expected != buf[j]))
 	{
+	  if(prints > 32)
+	    break;
 	  std::cerr << "error at " << i << " " << j << " rval = 0x" << std::hex << buf[j] << " expected = 0x" << expected << "\n" << std::dec;
 	  prints++;
 	}
       expected = buf[j] + 1; 
     }
   }
-  double runtime = timer.elapsed();
-  double speed = count * 8.0e-6 / runtime;
+  auto runtime = timer.elapsed();
+  auto speed = count * 8.0e-6 / runtime;
   std::cerr << "read " << count*8L << " bytes in " << runtime << " seconds, " << speed << " MB/s\n";
-  delete[] buf;
 }
 
 int main ( int argc, char **argv )
 {
-  uint64_t length = 1048576L*128L;//128L*8L;
-  struct fifodev *f2 = fifo_open("/dev/hififo_0_2");
-  if(f2 == NULL)
-    exit(EXIT_FAILURE);
-  struct fifodev *f6 = fifo_open("/dev/hififo_0_6");
-  if(f6 == NULL)
-    exit(EXIT_FAILURE);
-  struct fifodev *f0 = fifo_open("/dev/hififo_0_0");
-  if(f0 == NULL)
-    exit(EXIT_FAILURE);
-  struct fifodev *f4 = fifo_open("/dev/hififo_0_4");
-  if(f4 == NULL)
-    exit(EXIT_FAILURE);
+  uint64_t length = 1048576L*16;
+  Hififo f2{"/dev/hififo_0_2"};
+  Hififo f6{"/dev/hififo_0_6"};
+  Hififo f0{"/dev/hififo_0_0"};
+  Hififo f4{"/dev/hififo_0_4"};
 
-  writer(f2, length);
-  checker(f6, length);
-  
+  cerr << "huge pages\n";
+  writer(&f2, length, 1);
+  checker(&f6, length, 1);
+  cerr << "standard pages\n";
+  writer(&f2, length, 0);
+  checker(&f6, length, 0);
+
   std::cerr << "f0 -> f4\n";
   #pragma omp parallel sections
   {
     #pragma omp section
     {
-      checker(f4, length);
+      checker(&f4, length, 1);
     }
     #pragma omp section
     {
-      writer(f0, length);
+      writer(&f0, length, 1);
     }
   }
 
   std::cerr << "f2 -> f6\n";
-  std::thread t_reader (checker, f6, length);
-  std::thread t_writer (writer, f2, length);
+  std::thread t_reader (checker, &f6, length, 1);
+  std::thread t_writer (writer, &f2, length, 1);
   t_writer.join();
   t_reader.join();
-
-  fifo_close(f0);
-  fifo_close(f2);
-  fifo_close(f4);
-  fifo_close(f6);
 
   return 0;
 }
