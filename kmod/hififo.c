@@ -56,7 +56,6 @@ static struct pci_device_id hififo_pci_table[] = {
   {0,}
 };
 
-#define BUFFER_SIZE (1024*1024)
 #define MAX_PAGES 4096 /* Maximum number of pages for one DMA run */
 #define REQ_SIZE (MAX_PAGES * 17)
 
@@ -87,8 +86,6 @@ struct hififo_dma {
 struct hififo_fifo {
   u64 *pio_reg_base;
   u64 *local_base;
-  u64 *buffer;
-  dma_addr_t buffer_dma_addr;
   struct pci_dev *pdev;
   struct hififo_dma * dma[2];
   struct cdev cdev;
@@ -110,6 +107,7 @@ struct hififo_dev {
 };
 
 static int hififo_wait(struct hififo_fifo *fifo, u32 tag);
+static int hififo_release(struct inode *inode, struct file *filp);
 
 static int hififo_open(struct inode *inode, struct file *filp){
   struct hififo_fifo *fifo = container_of(inode->i_cdev, struct hififo_fifo, cdev);
@@ -134,12 +132,7 @@ static int hififo_open(struct inode *inode, struct file *filp){
   fifo->n_completed = 0;
   return 0;
  fail:
-  for(i=0; (i<2) && (fifo->dma[0] != NULL); i++){
-    if(fifo->dma[i]->req != NULL)
-      pci_free_consistent(fifo->pdev, REQ_SIZE, fifo->dma[i]->req, fifo->dma[i]->req_dma_addr);
-  }
-  kfree(fifo->dma[0]);
-  spin_unlock(&fifo->lock_open);
+  hififo_release(inode, filp);
   return -ENOMEM;
 }
 
@@ -148,10 +141,15 @@ static int hififo_release(struct inode *inode, struct file *filp){
   int i;
   hififo_wait(fifo, fifo->n_requested);
   for(i=0; i<2; i++){
+    if(fifo->dma[i] == NULL)
+      break;
     if(fifo->dma[i]->req != NULL)
       pci_free_consistent(fifo->pdev, REQ_SIZE, fifo->dma[i]->req, fifo->dma[i]->req_dma_addr);
   }
-  kfree(fifo->dma[0]);
+  if(fifo->dma[0] != NULL)
+    kfree(fifo->dma[0]);
+  fifo->dma[0] = NULL;
+  fifo->dma[1] = NULL;
   module_put(THIS_MODULE); // decrement the usage count
   printk("hififo %d: close\n", fifo->n);
   spin_unlock(&fifo->lock_open);
@@ -292,7 +290,7 @@ static int hififo_queue_request(struct hififo_fifo *fifo, char * buf, size_t len
     // do zero copy
     rc = hififo_wait(fifo, fifo->n_requested - 1);
     if(rc != 0)
-      return rc;
+      return -EAGAIN;
     rc = hififo_map_sg(fifo, fifo->dma[fifo->n_requested & 0x01], buf+count, copy_length);
     if(rc != 0)
       return rc;
