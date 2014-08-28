@@ -75,12 +75,11 @@ static int hififo_count;
 
 struct hififo_ioctl{
   void *buf;
-  size_t length;
-  s32 bytes_requested;
-  s32 bytes_current;
+  ssize_t length;
   s32 wait;
   s32 abort;
   s32 timeout;
+  u32 info;
 };
 
 struct hififo_dma {
@@ -322,13 +321,11 @@ static ssize_t hififo_read(struct file *filp,
 			    size_t length,
 			    loff_t * offset){
   struct hififo_fifo *fifo = filp->private_data;
-  int rc;
   s32 bytes_requested_initial = fifo->bytes_requested;
+  printk("hififo %d: read, %x bytes, addr = 0x%p\n", fifo->n, (int) length, buf);
   if((buf == NULL) || (length == 0))
     return -EINVAL;
-  rc = hififo_queue_request(fifo, buf, length);
-  if(rc < 0)
-    return rc;
+  hififo_queue_request(fifo, buf, length);
   hififo_wait(fifo, fifo->n_requested);
   return fifo->bytes_requested - bytes_requested_initial;
 }
@@ -338,14 +335,11 @@ static ssize_t hififo_write(struct file *filp,
 			     size_t length,
 			     loff_t * off){
   struct hififo_fifo *fifo = filp->private_data;
-  int rc;
   s32 bytes_requested_initial = fifo->bytes_requested;
   printk("hififo %d: write, %x bytes, addr = 0x%p\n", fifo->n, (int) length, buf);
   if((buf == NULL) || (length == 0))
     return -EINVAL;
-  rc = hififo_queue_request(fifo, (void *) buf, length);
-  if(rc < 0)
-    return rc;
+  hififo_queue_request(fifo, (void *) buf, length);
   hififo_wait(fifo, fifo->n_requested);
   return fifo->bytes_requested - bytes_requested_initial;
 }
@@ -353,21 +347,17 @@ static ssize_t hififo_write(struct file *filp,
 static long hififo_ioctl (struct file *file, unsigned int command, unsigned long arg){
   struct hififo_fifo *fifo = file->private_data;
   struct hififo_ioctl tmp;
-  int rc;
+  s32 bytes_requested_initial = fifo->bytes_requested;
   if(command == _IOWR(HIFIFO_IOC_MAGIC, IOC_INFO, struct hififo_ioctl)){
     if(copy_from_user(&tmp, (void *) arg, sizeof(struct hififo_ioctl)) != 0)
       return -EFAULT;
-    if((tmp.length != 0) && (tmp.buf != NULL)){
-      rc = hififo_queue_request(fifo, tmp.buf, tmp.length);
-    }
-    // 0 flushes all, -1 flushes all but this request
-    if(tmp.wait < 1){
-      rc = hififo_wait(fifo, fifo->n_requested + tmp.wait);
-    }
+    if((tmp.length != 0) && (tmp.buf != NULL))
+      hififo_queue_request(fifo, tmp.buf, tmp.length);
+    if(tmp.wait < 1) // 0 flushes all, -1 flushes all but this request
+      hififo_wait(fifo, fifo->n_requested + tmp.wait);
     if(tmp.abort)
       hififo_abort(fifo);
-    tmp.bytes_requested = fifo->bytes_requested;
-    tmp.bytes_current = 0;
+    tmp.length = fifo->bytes_requested - bytes_requested_initial;
     if(copy_to_user((void *) arg, &tmp, sizeof(struct hififo_ioctl)) != 0)
       return -EFAULT;
     return 0;
