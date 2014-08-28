@@ -52,51 +52,14 @@ public:
 
 #define min(x,y) ((x) > (y) ? (y) : (x))
 #define max(x,y) ((x) < (y) ? (y) : (x))
-
-struct fifodev
-{
-  int fd;
-};
-
-struct fifodev * fifo_open(const char * filename)
-{
-  uint64_t tmp[8];
-  struct fifodev *f = (struct fifodev *) calloc(1, sizeof(struct fifodev));
-  if(f == NULL)
-    goto fail0;
-  f->fd = open(filename, O_RDWR);
-  if(f->fd < 0){
-    perror(filename);
-    goto fail1;
-  }
-  if(ioctl(f->fd, _IOR('f', IOC_INFO, uint64_t[8]), tmp) != 0){
-    perror("device info ioctl failed");
-    goto fail2;
-  }
-  return f;
- fail2:
-  close(f->fd);
- fail1:
-  free(f);
- fail0:
-  cerr << "fifo_open(" << filename << ") failed\n";
-  //fprintf(stderr, "fifo_open(%s) failed\n", filename);
-  return NULL;
-}
-
-void fifo_close(struct fifodev *f){
-  //munmap(f->read_base, 2 * (f->read_size + f->write_size));
-  close(f->fd);
-  free(f);
-}
-
+/*
 uint64_t fifo_set_timeout(struct fifodev *f, uint64_t timeout){
   if(ioctl(f->fd, _IO('f', IOC_SET_TIMEOUT), timeout) != 0){
     perror("hififo.c: fifo_set_timeout() failed");
     return -1;
   }
   return 0;
-}
+  }*/
 
 class AlignedMem {
 private:
@@ -121,7 +84,7 @@ public:
     AlignedMem{size, 1};
   }
   ~AlignedMem(){
-    //cerr << "deallocating\n";
+    cerr << "deallocating\n";
     munmap(buf, len);
   }
   void *addr(){
@@ -129,50 +92,117 @@ public:
   }
 };
 
+struct hififo_ioctl{
+  void *buf;
+  ssize_t length;
+  int32_t wait;
+  int32_t abort;
+  int32_t timeout;
+  int32_t info;
+};
+
 class Hififo {
-public:
-  struct fifodev *fifo;
-  Hififo(const char * filename) {
-    fifo = fifo_open(filename);
-    if(fifo == NULL)
+private:
+  int fd;
+  int32_t finfo = 0;
+  AlignedMem *ringbuf;
+  size_t ringbuf_half_size;
+
+  ssize_t ioc(void * buf, ssize_t count, int wait, int abort){
+    struct hififo_ioctl tmp;
+    tmp.length = count;
+    tmp.buf = buf;
+    tmp.wait = wait;
+    tmp.abort = abort;
+    if(ioctl(fd, _IOWR('f', IOC_INFO, struct hififo_ioctl), &tmp) != 0){
+      perror("device info ioctl failed");
       throw;
+    }
+    finfo = tmp.info;
+    //cerr << "tmp.length = " << tmp.length << "\n";
+    return tmp.length;
+  }
+public:
+  Hififo(const char * filename) {
+    fd = open(filename, O_RDWR);
+    if(fd < 0){
+      perror(filename);
+      cerr << "fifo_open(" << filename << ") failed\n";
+      throw;
+    }
   }
   ~Hififo() {
     cerr << "closing hififo\n";
-    fifo_close(fifo);
+    close(fd);
   }
   int bwrite(const char *buf, size_t count){
-    ssize_t rc = write(fifo->fd, buf, count);
+    ssize_t rc = write(fd, buf, count);
     if((size_t) rc != count){
       std::cerr << "failed to write, attempted " << count << " bytes, retval = " << rc << "\n";
-      throw;
+      throw 90;
     }
     return rc;
   }
   ssize_t bread(char * buf, size_t count){
-    ssize_t rc = read(fifo->fd, buf, count);
+    ssize_t rc = read(fd, buf, count);
     if((size_t) rc != count){
       std::cerr << "failed to read, attempted " << count << " bytes, retval = " << rc << "\n";
-      throw;
+      //throw;
     }
     return rc;
   }
+  ssize_t request(void * buf, ssize_t count){
+    return ioc(buf, count, 1, 0);
+  }
+  ssize_t wait_all(){
+    return ioc(NULL, 0, 0, 0);
+  }
+  ssize_t wait_all_but_one(){
+    return ioc(NULL, 0, -1, 0);
+  }
+  ssize_t abort(){
+    return ioc(NULL, 0, 1, 1);
+  }
+  void init_buffer(size_t size){
+    ringbuf = new AlignedMem{size,1};
+    ringbuf_half_size = size/2;
+  }
+  void * get_write_buffer(){
+    return ringbuf;
+  }
 };
+
+void init_array(uint64_t *buf, size_t count, uint64_t * start_count){
+  for(size_t j=0; j<count; j++)
+    buf[j] = (*start_count)++;
+}
 
 void writer(Hififo *f, size_t count, int use_hp)
 {
-  size_t bs = 1024*512*16;
+  ssize_t bs = 1024*1024;
+  ssize_t rc;
   uint64_t wcount = 0xDEADE00000000000;
-  AlignedMem mem = {bs*8, use_hp};
+  AlignedMem mem = {bs*16, use_hp};
   uint64_t *wbuf = (uint64_t *) mem.addr();
-  for(size_t j=0; j<bs; j++)
-    wbuf[j] = wcount++;
+  init_array(&wbuf[0], bs, &wcount);
   TimeIt timer{};
-  for(uint64_t i=0; i<count; i+=bs){
-    f->bwrite((const char *) wbuf, bs*8);
-    for(size_t j=0; j<bs; j++)
-      wbuf[j] = wcount++;
+  for(uint64_t i=0; i<count; i+=2*bs){
+    rc = f->request(wbuf, bs*8);
+    if(rc != bs*8){
+      cerr << "timed out, " << rc << " bytes of " << bs*8 << " bytes\n";
+      break;
+    }
+    f->wait_all_but_one();
+    init_array(&wbuf[bs], bs, &wcount);
+    rc = f->request(&wbuf[bs], bs*8);
+    if(rc != bs*8){
+      cerr << "timed out, " << rc << " bytes of " << bs*8 << " bytes\n";
+      break;
+    }
+    f->wait_all_but_one();
+    init_array(&wbuf[0] , bs, &wcount);
   }
+  f->wait_all();
   auto runtime = timer.elapsed();
   auto speed = count * 8.0e-6 / runtime;
   std::cerr << "wrote " << count*8 << " bytes in " << runtime << " seconds, " << speed << " MB/s\n";
@@ -187,7 +217,8 @@ void checker(Hififo *f, size_t count, int use_hp)
   uint64_t *buf = (uint64_t *) mem.addr();
   TimeIt timer{};
   for(uint64_t i=0; i<count; i+=bs){
-    f->bread((char *) buf, bs*8);
+    if(bs*8 != f->bread((char *) buf, bs*8))
+      break;
     if(i == 0)
       expected = buf[0];
     for(unsigned int j=0; j<bs; j++){
@@ -239,6 +270,8 @@ int main ( int argc, char **argv )
   std::thread t_writer (writer, &f2, length, 1);
   t_writer.join();
   t_reader.join();
-
+  cerr << "running timeout tests\n";
+  writer(&f0, 1024, 1);
+  checker(&f4, length, 1);
   return 0;
 }
