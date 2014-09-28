@@ -22,9 +22,8 @@ import sys, os, random
 import numpy as np
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import Timer, RisingEdge, ReadOnly
+from cocotb.triggers import Timer, RisingEdge, ReadOnly, Event
 from cocotb.result import TestFailure, ReturnValue
-from cocotb.regression import TestFactory
 
 """@cocotb.coroutine
 def do_rotate(dut, din, angle):
@@ -98,10 +97,12 @@ def run_test(dut):
     for i in range(32):
         print i, hex(int(pci.completion_data[512+i]))
     pci.write_fifo(fifo=4, address=0x1000)
-    pci.read(0*8, 2)
-    #print pci.read_response.get(True, 1.0)
-    pci.read(1*8, 3)
-    pci.read(2*8, 4)
+    a = yield pci.read(0*8, 2)
+    print a
+    a = yield pci.read(1*8, 3)
+    print a
+    a = yield pci.read(2*8, 4)
+    print a
     for i in range(17000):
         yield RisingEdge(clock)    
     if not (pci.write_data_expected == pci.write_data).all():
@@ -116,6 +117,7 @@ def run_test(dut):
                 if fails == 32:
                     break
         raise TestFailure("FAIL - data doesn't match")
+
 import Queue
 
 def endianswap(x):
@@ -132,12 +134,12 @@ class PCIe_host():
         self.rxdata = []
         self.requested = 0
         self.txqueue = Queue.Queue()
-        self.read_response = Queue.Queue()
         self.completion_data = np.zeros(1048576, dtype = 'uint64')
         self.write_data = np.zeros(16*1048576, dtype = 'uint64')
         self.write_data_expected = np.zeros(16*1048576, dtype = 'uint64')
         self.errors = 0
         self.read_tag = 0
+        self.read_data = 0
     def write(self, data, address):
         """32 bit address / 64 bit data write"""
         tlp = np.zeros(6, dtype='uint32')
@@ -147,14 +149,19 @@ class PCIe_host():
         tlp[3] = endianswap(data)
         tlp[4] = endianswap(data >> 32)
         self.txqueue.put(tlp)
+    
+    @cocotb.coroutine
     def read(self, address, tag=0):
         """ 32 bit read """
         tlp = np.zeros(4, dtype='uint32')
         tlp[0] = 0x00000001
         tlp[1] = 0xbaaa00ff | tag << 8
         tlp[2] = address
+        self.read_wait = Event("rw")
         self.txqueue.put(tlp)
-        self.read_outstanding = 1
+        yield self.read_wait.wait()
+        raise ReturnValue(self.read_data)
+    
     def complete(self, address, reqid_tag):
         address &= 0xFFFF8
         address = address >> 3
@@ -248,7 +255,8 @@ class PCIe_host():
         data = endianswap(rxdata[3])
         tag = 0xFF & (rxdata[2]>>8)
         print "read completion, data = {}, tag = {}".format(data, tag)
-        self.read_response.put(data)
+        self.read_data = data
+        self.read_wait.set(data)
 
     def handle_write_tlp(self, bits, address, length, rxdata):
         #print "{} bit write request at 0x{:016X}, {} header dw, {} payload dw".format(bits, address, length, len(rxdata))
