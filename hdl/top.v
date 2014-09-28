@@ -90,4 +90,11 @@ module vna_dsp
 	tpc_data <= fpc_data;
 	null_read <= fifo_ready[2];
      end
+
+   initial
+     begin
+	$dumpfile("dump.vcd");
+	$dumpvars(0);
+     end
+   
 endmodule

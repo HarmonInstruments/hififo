@@ -16,6 +16,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
+`ifndef SIM
+
 module pcie_core_wrap
   (
    // IO pins
@@ -204,3 +206,37 @@ module pcie_core_wrap
       );      
 endmodule
 
+`endif
+
+`ifdef SIM
+module pcie_core_wrap
+  (
+   // IO pins
+   output [3:0]      pci_exp_txp,
+   output [3:0]      pci_exp_txn,
+   input [3:0] 	     pci_exp_rxp,
+   input [3:0] 	     pci_exp_rxn,
+   input 	     sys_clk_p,
+   input 	     sys_clk_n,
+   input 	     sys_rst_n,
+   output reg [15:0] pci_id = 16'hDEAD,
+   input 	     interrupt,
+   output reg 	     interrupt_rdy = 0,
+   output reg 	     pci_reset = 0,
+   output reg 	     clock = 0,
+   // AXI to core
+   output reg 	     s_axis_tx_tready = 0,
+   input [63:0]      s_axis_tx_tdata,
+   input 	     s_axis_tx_1dw,
+   input 	     s_axis_tx_tlast,
+   input 	     s_axis_tx_tvalid,
+   // AXI from core
+   output reg 	     m_axis_rx_tvalid = 0,
+   output reg 	     m_axis_rx_tlast = 0,
+   output reg [63:0] m_axis_rx_tdata = 0
+   );
+   always @ (posedge clock)
+     interrupt_rdy <= interrupt;
+endmodule
+
+`endif
