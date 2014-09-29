@@ -27,6 +27,7 @@
 #include <time.h>
 #include <thread>
 #include <iostream>
+#include <stdexcept>
 
 using namespace std;
 
@@ -44,22 +45,9 @@ public:
 };
 
 #define IOC_INFO 0x10
-#define IOC_GET_TO_PC 0x11
-#define IOC_PUT_TO_PC 0x12
-#define IOC_GET_FROM_PC 0x13
-#define IOC_PUT_FROM_PC 0x14
-#define IOC_SET_TIMEOUT 0x15
 
 #define min(x,y) ((x) > (y) ? (y) : (x))
 #define max(x,y) ((x) < (y) ? (y) : (x))
-/*
-uint64_t fifo_set_timeout(struct fifodev *f, uint64_t timeout){
-  if(ioctl(f->fd, _IO('f', IOC_SET_TIMEOUT), timeout) != 0){
-    perror("hififo.c: fifo_set_timeout() failed");
-    return -1;
-  }
-  return 0;
-  }*/
 
 class AlignedMem {
 private:
@@ -68,6 +56,7 @@ private:
 public:
   AlignedMem(size_t size, int use_hp) {
     len = size;
+    cerr << "allocating\n";
     if(use_hp){
       buf = (uint64_t *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE | MAP_HUGETLB, 1, 0); 
       if(buf != MAP_FAILED){
@@ -80,9 +69,7 @@ public:
       return;
     throw std::bad_alloc();
   }
-  AlignedMem(size_t size) {
-    AlignedMem{size, 1};
-  }
+  AlignedMem(size_t size) {AlignedMem{size, 1};}
   ~AlignedMem(){
     cerr << "deallocating\n";
     munmap(buf, len);
@@ -105,9 +92,14 @@ class Hififo {
 private:
   int fd;
   int32_t finfo = 0;
-  AlignedMem *ringbuf;
-  size_t ringbuf_half_size;
-
+  AlignedMem *amem;
+protected:
+  void *buf[2];
+  ssize_t bufsize[2];
+  ssize_t half_size; 
+  int p_in;
+  int p_out;
+  int p_req;
   ssize_t ioc(void * buf, ssize_t count, int wait, int abort){
     struct hififo_ioctl tmp;
     tmp.length = count;
@@ -115,11 +107,9 @@ private:
     tmp.wait = wait;
     tmp.abort = abort;
     if(ioctl(fd, _IOWR('f', IOC_INFO, struct hififo_ioctl), &tmp) != 0){
-      perror("device info ioctl failed");
-      throw;
+      throw std::runtime_error( "hififo device info ioctl failed" );
     }
     finfo = tmp.info;
-    //cerr << "tmp.length = " << tmp.length << "\n";
     return tmp.length;
   }
 public:
@@ -128,7 +118,7 @@ public:
     if(fd < 0){
       perror(filename);
       cerr << "fifo_open(" << filename << ") failed\n";
-      throw;
+      throw std::runtime_error( "hififo open failed" );
     }
   }
   ~Hififo() {
@@ -139,7 +129,7 @@ public:
     ssize_t rc = write(fd, buf, count);
     if((size_t) rc != count){
       std::cerr << "failed to write, attempted " << count << " bytes, retval = " << rc << "\n";
-      throw 90;
+      throw std::runtime_error( "hififo write failed" );
     }
     return rc;
   }
@@ -147,7 +137,7 @@ public:
     ssize_t rc = read(fd, buf, count);
     if((size_t) rc != count){
       std::cerr << "failed to read, attempted " << count << " bytes, retval = " << rc << "\n";
-      //throw;
+      throw std::runtime_error( "hififo read failed" );
     }
     return rc;
   }
@@ -164,11 +154,85 @@ public:
     return ioc(NULL, 0, 1, 1);
   }
   void init_buffer(size_t size){
-    ringbuf = new AlignedMem{size,1};
-    ringbuf_half_size = size/2;
+    amem = new AlignedMem{size,1};
+    half_size = size / 2;
+    buf[0] = amem->addr();
+    buf[1] = ((char *)buf[0]) + half_size;
+    p_in = 0;
+    p_out = 0;
+    p_req = 0;
   }
-  void * get_write_buffer(){
-    return ringbuf;
+};
+
+class Hififo_Read : public Hififo 
+{
+private:
+  void update_request(){
+    while((p_req - p_out) < 2){
+      //TimeIt timer{};
+      ssize_t rc = request(buf[p_req & 1], half_size);
+      if(rc != half_size){
+	throw std::runtime_error( "hififo read timeout" );
+      }
+      p_req ++;
+      //cerr << "req " << p_req << " " << p_out << " " << "update_request completed in " << timer.elapsed() << " seconds\n";
+    }
+  }
+public:
+  Hififo_Read(const char * filename)
+  :Hififo(filename) {}
+
+  size_t get_read_buffer(void ** buffer){
+    //cerr << "grb\n";
+    //TimeIt timer{};
+    update_request();
+    ssize_t bytes_remaining = wait_all_but_one();
+    *buffer = buf[p_out & 1];
+    //cerr << "grb completed in " << timer.elapsed() << " seconds, bytes_remaining = " << bytes_remaining << "\n";
+    if(bytes_remaining < 0){
+      cerr << "bytes_remaining = " << bytes_remaining << "\n";
+      throw std::runtime_error( "hififo read timeout 1" );
+    }
+    return half_size - bytes_remaining;
+  }
+  void put_read_buffer(){
+    p_out ++;
+    update_request();
+  }
+};
+
+class Hififo_Write : public Hififo 
+{
+private:
+  void update_request(){
+    while((p_req - p_out) < 2){
+      TimeIt timer{};
+      ssize_t rc = request(buf[p_req & 1], half_size);
+      if(rc != half_size){
+	cerr << "read timeout";
+	break;
+      }
+      p_req ++;
+      cerr << "req " << p_req << " " << p_out << " " << "update_request completed in " << timer.elapsed() << " seconds\n";
+    }
+  }
+public:
+  Hififo_Write(const char * filename)
+  :Hififo(filename) {}
+  size_t get_write_buffer(void ** buffer){
+    cerr << "gwb\n";
+    TimeIt timer{};
+    update_request();
+    ssize_t bytes_remaining = wait_all_but_one();
+    *buffer = buf[p_out & 1];
+    cerr << "gwb completed in " << timer.elapsed() << " seconds\n";
+    if(bytes_remaining < 0)
+      throw std::runtime_error( "hififo write timeout" );
+    return half_size - bytes_remaining;
+  }
+  void put_write_buffer(){
+    p_out ++;
+    update_request();
   }
 };
 
@@ -177,60 +241,64 @@ void init_array(uint64_t *buf, size_t count, uint64_t * start_count){
     buf[j] = (*start_count)++;
 }
 
-void writer(Hififo *f, size_t count, int use_hp)
+void writer(Hififo_Write *f, size_t count, int use_hp)
 {
-  ssize_t bs = 1024*1024;
-  ssize_t rc;
+  ssize_t bs = 4*1024*1024;
   uint64_t wcount = 0xDEADE00000000000;
-  AlignedMem mem = {bs*16, use_hp};
+  AlignedMem mem = {(size_t) bs*16, use_hp};
   uint64_t *wbuf = (uint64_t *) mem.addr();
-  init_array(&wbuf[0], bs, &wcount);
+  init_array(wbuf, bs, &wcount);
   TimeIt timer{};
-  for(uint64_t i=0; i<count; i+=2*bs){
-    rc = f->request(wbuf, bs*8);
+  for(uint64_t i=0; i<count; i+=bs){
+    uint64_t * buf = &wbuf[bs & i];
+    if(i!=0)
+      {
+	f->wait_all_but_one();
+	init_array(buf, bs, &wcount);
+      }
+    ssize_t rc = f->request(buf, bs*8);
     if(rc != bs*8){
       cerr << "timed out, " << rc << " bytes of " << bs*8 << " bytes\n";
-      break;
+      throw std::runtime_error( "hififo write timeout" );
     }
-    f->wait_all_but_one();
-    init_array(&wbuf[bs], bs, &wcount);
-    rc = f->request(&wbuf[bs], bs*8);
-    if(rc != bs*8){
-      cerr << "timed out, " << rc << " bytes of " << bs*8 << " bytes\n";
-      break;
-    }
-    f->wait_all_but_one();
-    init_array(&wbuf[0] , bs, &wcount);
   }
   f->wait_all();
   auto runtime = timer.elapsed();
-  auto speed = count * 8.0e-6 / runtime;
+  auto speed = count * 8.0 * 1.0e-6 / runtime;
   std::cerr << "wrote " << count*8 << " bytes in " << runtime << " seconds, " << speed << " MB/s\n";
 };
 
-void checker(Hififo *f, size_t count, int use_hp)
+void checker(Hififo_Read *f, size_t count, int use_hp)
 {
   uint64_t expected = 0;
-  size_t bs = 1024*512*8;
+  ssize_t bs = 1*1024*1024;
   int prints = 0;
-  AlignedMem mem = {bs*8, use_hp};
-  uint64_t *buf = (uint64_t *) mem.addr();
+  f->init_buffer(bs*8*2);
   TimeIt timer{};
   for(uint64_t i=0; i<count; i+=bs){
-    if(bs*8 != f->bread((char *) buf, bs*8))
-      break;
-    if(i == 0)
-      expected = buf[0];
+    uint64_t *buf;
+    try{
+      if(bs*8 != f->get_read_buffer((void **) (&buf))){
+	cerr << "timed out\n";
+	break;
+      }
+    }
+    catch(const std::runtime_error & e){
+      cerr << "runtime error " << e.what() << "\n";
+      return;
+    }
     for(unsigned int j=0; j<bs; j++){
-      if((expected != buf[j]))
+      if(expected != buf[j])
 	{
 	  if(prints > 32)
 	    break;
-	  std::cerr << "error at " << i << " " << j << " rval = 0x" << std::hex << buf[j] << " expected = 0x" << expected << "\n" << std::dec;
+	  if(!((i==0) && (j==0)))
+	    std::cerr << "error at " << i << " " << j << " rval = 0x" << std::hex << buf[j] << " expected = 0x" << expected << "\n" << std::dec;
 	  prints++;
 	}
-      expected = buf[j] + 1; 
+      expected = buf[j] + 1;
     }
+    f->put_read_buffer();
   }
   auto runtime = timer.elapsed();
   auto speed = count * 8.0e-6 / runtime;
@@ -239,19 +307,16 @@ void checker(Hififo *f, size_t count, int use_hp)
 
 int main ( int argc, char **argv )
 {
-  uint64_t length = 1048576L*16;
-  Hififo f2{"/dev/hififo_0_2"};
-  Hififo f6{"/dev/hififo_0_6"};
-  Hififo f0{"/dev/hififo_0_0"};
-  Hififo f4{"/dev/hififo_0_4"};
+  uint64_t length = 1048576L*512;
+  Hififo_Write f2{"/dev/hififo_0_2"};
+  Hififo_Read f6{"/dev/hififo_0_6"};
+  Hififo_Write f0{"/dev/hififo_0_0"};
+  Hififo_Read f4{"/dev/hififo_0_4"};
 
-  cerr << "huge pages\n";
+  cerr << "one way, huge pages\n";
   writer(&f2, length, 1);
   checker(&f6, length, 1);
-  cerr << "standard pages\n";
-  writer(&f2, length, 0);
-  checker(&f6, length, 0);
-
+  
   std::cerr << "f0 -> f4\n";
   #pragma omp parallel sections
   {
@@ -264,14 +329,16 @@ int main ( int argc, char **argv )
       writer(&f0, length, 1);
     }
   }
-
+  /*
   std::cerr << "f2 -> f6\n";
   std::thread t_reader (checker, &f6, length, 1);
   std::thread t_writer (writer, &f2, length, 1);
   t_writer.join();
   t_reader.join();
+  
   cerr << "running timeout tests\n";
   writer(&f0, 1024, 1);
   checker(&f4, length, 1);
+  */
   return 0;
 }
