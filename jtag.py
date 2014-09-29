@@ -10,6 +10,7 @@ if __name__ == "__main__":
     jtag.get_idcode_from_reset()
     jtag.get_idcode_from_instruction()
     jtag.get_dna()
+    jtag.read_xadc()
     jtag.get_idcode_from_instruction()
     import sys
     if len(sys.argv) > 1:
