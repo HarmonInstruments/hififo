@@ -1,6 +1,7 @@
 /* 
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
+ * Author: Darrell Harmon
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,12 +15,6 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/
- */
-
-/*
- * Copyright 2014 Harmon Instruments, LLC
- * Author: Darrell Harmon
- *
  */
 
 module sequencer
