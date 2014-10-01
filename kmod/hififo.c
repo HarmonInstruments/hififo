@@ -30,6 +30,7 @@
 #include <linux/mm.h>
 
 #define hififo_min(x,y) ((x) > (y) ? (y) : (x))
+#define hififo_max(x,y) ((x) < (y) ? (y) : (x))
 
 #define VENDOR_ID 0x10EE
 #define DEVICE_ID 0x7024
@@ -218,7 +219,7 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, void 
   int i, rc;
   loff_t start_offset = ((loff_t) buf) & (PAGE_SIZE-1);
   dma->n_pages = DIV_ROUND_UP(length + start_offset, PAGE_SIZE);
-  printk ("hififo %d: start gup\n", fifo->n);
+  printk ("hififo %d: start gup, %d pages\n", fifo->n, (int) dma->n_pages);
   rc = get_user_pages_fast((loff_t)buf,
 			   dma->n_pages,
 			   fifo->n > 4 ? 1 : 0,
@@ -235,10 +236,10 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, void 
   /*first*/
   sg_set_page(&dma->sglist[0],\
 	      dma->page_list[0],\
-	      PAGE_SIZE - start_offset,\
+	      hififo_min(PAGE_SIZE - start_offset, length),\
 	      start_offset);
   /*middle*/
-  for(i=0; i < dma->n_pages-1; i++)
+  for(i=1; i < dma->n_pages-1; i++)
     sg_set_page(&dma->sglist[i], dma->page_list[i], PAGE_SIZE, 0);
   /*last*/
   if (dma->n_pages > 1)
