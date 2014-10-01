@@ -245,7 +245,7 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, void 
   if (dma->n_pages > 1)
     sg_set_page(&dma->sglist[dma->n_pages-1],\
 		dma->page_list[dma->n_pages-1],\
-		length - ((dma->n_pages-1)*PAGE_SIZE),\
+		start_offset + length - ((dma->n_pages-1)*PAGE_SIZE),\
 		0);
   
   rc = pci_map_sg(fifo->pdev, dma->sglist, dma->n_pages, DMA_DIRECTION(fifo));
