@@ -236,6 +236,100 @@ public:
   }
 };
 
+class Sequencer {
+private:
+  Hififo_Write * wf;
+  Hififo_Read * rf;
+  AlignedMem *amem;  
+  uint64_t * wbuf;
+  uint64_t * rbuf;
+  size_t wcount;
+  size_t wptr;
+  size_t bufsize;
+  size_t reads_expected;
+public:
+  Sequencer(const char * filename_write, const char * filename_read) {
+    wf = new Hififo_Write {filename_write};
+    rf = new Hififo_Read  {filename_read};
+    bufsize = 131072;
+    wptr = 0;
+    wcount = 0;
+    reads_expected = 0;
+    amem = new AlignedMem{2*8*bufsize, 1};
+    wbuf = (uint64_t *) amem->addr();
+    rbuf = &wbuf[bufsize];
+  }
+  void append(uint64_t data){
+    if(wcount == bufsize)
+      throw;
+    wbuf[wcount++] = data;
+  }
+  void wait(uint64_t count){
+    append(1L<<62 | 1L<<61 | count << 32 | 0);
+  }
+  void write_req(size_t count, uint32_t address, uint64_t * data){
+    append(2L<<62 | 1L<<61 | count << 32 | address);
+    while(count--)
+      append(*data++);
+  }
+  void write_single(uint32_t address, uint64_t data){
+    write_req(1, address, &data);
+  }
+  void read_req(size_t count, uint32_t address){
+    append(3L<<62 | 1L<<61 | count << 32 | address);
+    reads_expected += count;
+  }
+  uint64_t * run(){
+    // generate a flush for the read FIFO
+    int increment = 1024;
+    size_t excess_reads = reads_expected % increment;
+    if(excess_reads != 0)
+      read_req(increment - excess_reads, 0);
+    // generate a flush for the write FIFO
+    size_t excess_writes = wcount % increment;
+    size_t fill_count = increment - excess_writes;
+    while(fill_count--)
+      append(0);
+    wf->request(wbuf, 8*wcount);
+    if(reads_expected != 0){
+      size_t rc = rf->request(rbuf, 8*reads_expected);
+      if(rc != 8*reads_expected){
+	throw std::runtime_error( "sequencer read timeout" );
+      }
+      rf->wait_all();
+    }
+    wf->wait_all();
+    wptr = 0;
+    wcount = 0;
+    reads_expected = 0;
+    return rbuf;
+  }
+};
+
+class SPI_Config {
+private:
+  Sequencer *seq;
+  int spi_address;
+public:
+  SPI_Config(Sequencer *sequencer, int addr) {
+    seq = sequencer;
+    spi_address = addr;
+  }
+  void txrx(uint8_t * data, size_t len, ssize_t read_offset){
+    for(size_t i=0; i<len; i++){
+      seq->write_single(spi_address, ((i+1) == len ? 0 : 0x100) | data[i]);
+      seq->wait(128);
+      if((read_offset >= 0) && (i >= (unsigned) read_offset))
+	seq->read_req(1, spi_address);
+    } 
+    if(read_offset < 0)
+      return;
+    uint64_t * rdata64 = seq->run();
+    for(size_t i=read_offset; i<len; i++)
+      data[i-read_offset] = rdata64[i];
+  }
+};
+
 void init_array(uint64_t *buf, size_t count, uint64_t * start_count){
   for(size_t j=0; j<count; j++)
     buf[j] = (*start_count)++;
@@ -278,7 +372,7 @@ void checker(Hififo_Read *f, size_t count, int use_hp)
   for(uint64_t i=0; i<count; i+=bs){
     uint64_t *buf;
     try{
-      if(bs*8 != f->get_read_buffer((void **) (&buf))){
+      if(bs*8 != (ssize_t) f->get_read_buffer((void **) (&buf))){
 	cerr << "timed out\n";
 	break;
       }
@@ -307,12 +401,52 @@ void checker(Hififo_Read *f, size_t count, int use_hp)
 
 int main ( int argc, char **argv )
 {
-  uint64_t length = 1048576L*512;
+  uint64_t length = 1048576L*64;
+  /*
   Hififo_Write f2{"/dev/hififo_0_2"};
   Hififo_Read f6{"/dev/hififo_0_6"};
   Hififo_Write f0{"/dev/hififo_0_0"};
   Hififo_Read f4{"/dev/hififo_0_4"};
+  */
+  Sequencer seq{"/dev/hififo_0_1", "/dev/hififo_0_5"};
+  
+  uint64_t * sbuf;
 
+  TimeIt timer{};
+  
+  SPI_Config spi(&seq, 4);
+  uint8_t spibuf_in[256];
+  spibuf_in[0] = 0x9F;
+  spibuf_in[1] = 0;
+  spi.txrx(spibuf_in, 32, 0);
+  
+  cerr << "sequencer completed in " << timer.elapsed() << " seconds\n";
+
+  for(int i=0; i<32; i++)
+    cerr << "spibuf[" << i << "] = " << std::hex << 1L*spibuf_in[i] << "\n";
+
+  for(int i=0; i<64; i++){
+    seq.write_single(5, i<<16);
+    seq.wait(100);
+    seq.read_req(1, 5);
+  }
+  sbuf = seq.run();
+  for(int i=0; i<32; i++)
+    cerr << "xadc[" << i << "] = " << std::hex << sbuf[i] << "\n";
+
+  for(int i=0; i<32; i++){
+    seq.write_single(8, i<<16);
+    seq.write_single(9, i<<16);
+    seq.write_single(10, i<<16);
+    seq.write_single(11, i<<16);
+    seq.wait(10000);
+    seq.read_req(4, 8);
+  }
+  sbuf = seq.run();
+  for(int i=0; i<32; i++)
+    cerr << "gt3[" << i << "] = " << std::hex << sbuf[i] << "\n";
+
+  /*
   cerr << "one way, huge pages\n";
   writer(&f2, length, 1);
   checker(&f6, length, 1);
@@ -328,7 +462,7 @@ int main ( int argc, char **argv )
     {
       writer(&f0, length, 1);
     }
-  }
+    }*/
   /*
   std::cerr << "f2 -> f6\n";
   std::thread t_reader (checker, &f6, length, 1);
