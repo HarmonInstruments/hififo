@@ -81,7 +81,8 @@ def run_test(dut):
     pci.completion_data[seq_base + 5] = seq_read | seq_inc | (5 << 32) | 0xDEAD
     pci.completion_data[seq_base + 6] = seq_wait | (100 << 32)
     pci.completion_data[seq_base + 7] = seq_read | seq_inc | (58 << 32) | 0
-    
+    pci.completion_data[seq_base + 8] = seq_write | seq_inc | (1 << 32) | 0x4
+    pci.completion_data[seq_base + 9] = 0x55
     pci.create_command(fifo = 1, address = 0x40000, count = 0x200)
     pci.create_command(fifo = 5, address = 0x50000, count = 0x200)
 
@@ -93,10 +94,17 @@ def run_test(dut):
     print a
     for i in range(17000):
         yield RisingEdge(clock)    
-    if not (pci.write_data_expected == pci.write_data).all():
+    a = yield pci.read(64 + 1*8, 4)
+    print a
+    a = yield pci.read(64 + 5*8, 4)
+    print a
+    
+    check_end = 0x40000/8
+
+    if not (pci.write_data_expected[:check_end] == pci.write_data[:check_end]).all():
         print "FAIL - data, expected"
         fails = 0
-        for i in range(len(pci.write_data_expected)):
+        for i in range(check_end):
             a = pci.write_data[i]
             b = pci.write_data_expected[i]
             if a != b:
@@ -105,6 +113,7 @@ def run_test(dut):
                 if fails == 32:
                     break
         raise TestFailure("FAIL - data doesn't match")
+
 
 import Queue
 
