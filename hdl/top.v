@@ -59,6 +59,7 @@ module vna_dsp
    reg [63:0] 	    seq_rdata0, seq_rdata1;
    reg [63:0] 	    seq_test;
    wire [7:0] 	    seq_spidata;
+   wire [16:0] 	    seq_xadcdata;
       
    hififo_pcie #(.ENABLE(8'b01110111)) hififo
      (.pci_exp_txp(pcie_txp),
@@ -100,6 +101,14 @@ module vna_dsp
       .status(16'h0)
       );
 
+   xadc xadc
+     (
+      .clock(clock),
+      .write(seq_wvalid && (seq_address == 5)),
+      .din(seq_wdata),
+      .dout(seq_xadcdata)
+      );
+   
    spi_8bit_rw spi_cflash
      (
       .clock(clock),
@@ -142,6 +151,7 @@ module vna_dsp
 	    2: seq_rdata0 <= 64'd2;
 	    3: seq_rdata0 <= 64'd3;
 	    4: seq_rdata0 <= seq_spidata;
+	    5: seq_rdata0 <= seq_xadcdata;
 	    default: seq_rdata0 <= seq_address;
 	  endcase
 	

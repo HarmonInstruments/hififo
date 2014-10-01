@@ -10,6 +10,7 @@ export VERILOG_SOURCES = $(PWD)/../hififo.v \
 	$(PWD)/../core_wrap.v \
 	$(PWD)/../top.v \
 	$(PWD)/../sequencer.v \
+	$(PWD)/../xadc.v \
 	$(PWD)/../spi_8.v
 
 export TOPLEVEL = vna_dsp
