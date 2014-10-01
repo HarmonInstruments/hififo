@@ -40,7 +40,7 @@ module hififo_fetch_descriptor
    parameter AMSB = 63; // address MSB
    parameter DMSB = 63; // data MSB
    parameter SMSB = 31; // status MSB
-   parameter LMSB = 20; // transfer length MSB
+   parameter LMSB = 16; // transfer length MSB
             
    reg [1:0] 		  state;
    reg [AMSB-9:0] 	  next_desc_addr;
@@ -84,7 +84,7 @@ module hififo_fetch_descriptor
 	if(reset_or_abort)
 	  request_count <= 1'b0;
 	else if(desc_ready && (desc_data[2:0] == 3) && (request_count == 0))
-	  request_count <= desc_data[21:BS];
+	  request_count <= desc_data[LMSB:BS];
 	else
 	  request_count <= request_count - request_ack;
 	
