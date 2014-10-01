@@ -17,7 +17,7 @@
  * 
  * din[15:0] DRP data
  * din[22:16] DRP address
- * din[23] DRP write enale
+ * din[31] DRP write enable
  * 
  * dout[15:0] DRP data
  * dout[16] busy
@@ -49,15 +49,15 @@ module xadc
 	dout[16] <= state != 0;
 	state <= write ? 2'd1 :
 		 (state == 1) && (clkdiv == 0) ? 2'd2 :
-		 (state[1] == 1) && (clkdiv == 0) && drp_drdy ? 2'd0 : // 2 or 3
+		 (clkdiv == 0) && drp_drdy ? 2'd0 :
 		 (state == 2) && (clkdiv == 0) ? 2'd3 :
 		 state;
 	drp_en <= (state == 1) && (clkdiv == 0) ? 1'b1 :
 		  (state == 2) && (clkdiv == 0) ? 1'b0 :
 		  drp_en;
 	if(write)
-	  drp_in <= din[23:0];
-	if(state[1] && drp_drdy)
+	  drp_in <= {din[31], din[22:0]};
+	if((clkdiv == 0) && drp_drdy)
 	  dout[15:0] <= drp_do;
      end
 
@@ -72,7 +72,7 @@ module xadc
       .DRDY(drp_drdy),
       // DRP inputs
       .DADDR(drp_in[22:16]),
-      .DCLK(clkdiv[1]),
+      .DCLK(clkdiv[2]),
       .DEN(drp_en),
       .DI(drp_in[15:0]),
       .DWE(drp_in[23])
