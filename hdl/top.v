@@ -16,24 +16,26 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
+`define USE_GT_DRP
+`define NLANES 4
+
 module vna_dsp
   (
-   output [3:0]     pcie_txp,
-   output [3:0]     pcie_txn,
-   input [3:0] 	    pcie_rxp,
-   input [3:0] 	    pcie_rxn,
-   input 	    pcie_refclk_p,
-   input 	    pcie_refclk_n,
-   input 	    pcie_rst_n,
-   // SPI configuration flash
-   //output 	    cflash_sck,
-   output 	    cflash_sdi,
-   output 	    cflash_cs,
-   input 	    cflash_sdo,
-   output [1:0]     cflash_high,
-   output reg [3:0] led = 4'h5
+   output [`NLANES-1:0] pcie_txp,
+   output [`NLANES-1:0] pcie_txn,
+   input [`NLANES-1:0] 	pcie_rxp,
+   input [`NLANES-1:0] 	pcie_rxn,
+   input 		pcie_refclk_p,
+   input 		pcie_refclk_n,
+   input 		pcie_rst_n,
+   // SPI configuration flash, sck is to STARTUP_E2
+   output 		cflash_sdi,
+   output 		cflash_cs,
+   input 		cflash_sdo,
+   output [1:0] 	cflash_high,
+   output reg [3:0] 	led = 4'h5
    );
-   
+      
    wire 	    clock;
    
    reg [63:0] 	    tpc_data = 0;
@@ -52,6 +54,13 @@ module vna_dsp
 
    assign cflash_high = 2'b11;
    wire 	    cflash_sck;
+
+`ifdef USE_GT_DRP
+   wire [9*`NLANES-1:0] gt_drp_address;
+   wire [`NLANES-1:0] 	gt_drp_en, gt_drp_ready, gt_drp_we;
+   wire [16*`NLANES-1:0] gt_drp_di, gt_drp_do;
+   wire 		 gt_drp_clock;
+`endif
    
    wire 	    seq_rvalid, seq_wvalid;
    wire [15:0] 	    seq_address;
@@ -60,8 +69,9 @@ module vna_dsp
    reg [63:0] 	    seq_test;
    wire [7:0] 	    seq_spidata;
    wire [16:0] 	    seq_xadcdata;
-      
-   hififo_pcie #(.ENABLE(8'b01110111)) hififo
+   wire [16:0] 	    seq_gtdrpdata[`NLANES-1:0];
+         
+   hififo_pcie #(.ENABLE(8'b01110111), .NLANES(`NLANES)) hififo
      (.pci_exp_txp(pcie_txp),
       .pci_exp_txn(pcie_txn),
       .pci_exp_rxp(pcie_rxp),
@@ -70,6 +80,15 @@ module vna_dsp
       .sys_clk_n(pcie_refclk_n),
       .sys_rst_n(pcie_rst_n),
       .clock(clock),
+      `ifdef USE_GT_DRP
+      .gt_drp_address(gt_drp_address),
+      .gt_drp_en(gt_drp_en),
+      .gt_drp_di(gt_drp_di),
+      .gt_drp_do(gt_drp_do),
+      .gt_drp_ready(gt_drp_ready),
+      .gt_drp_we(gt_drp_we),
+      .gt_drp_clock(gt_drp_clock),
+      `endif
       .fifo_clock({8{clock}}),
       .fifo_reset(fifo_reset),
       .fifo_ready(fifo_ready),
@@ -108,6 +127,30 @@ module vna_dsp
       .din(seq_wdata),
       .dout(seq_xadcdata)
       );
+   
+`ifdef USE_GT_DRP
+   wire [2:0] 	    gt_drp_clkdiv;
+   gt_drp_clock gt_drp_clockgen(.clock(clock), .drpclock(gt_drp_clock), .clkdiv(gt_drp_clkdiv));
+   genvar 	    i;
+   generate
+      for (i = 0; i < `NLANES; i = i+1) begin: gtdrp
+	 gt_drp gt_drp_n
+	       (
+		.clock(clock),
+		.write(seq_wvalid && (seq_address == 8+i)),
+		.din(seq_wdata),
+		.dout(seq_gtdrpdata[i]),
+		.clkdiv(gt_drp_clkdiv),
+		.drp_address(gt_drp_address[8+9*i:9*i]),
+		.drp_en(gt_drp_en[i]),
+		.drp_di(gt_drp_di[15+16*i:16*i]),
+		.drp_do(gt_drp_do[15+16*i:16*i]),
+		.drp_ready(gt_drp_ready[i]),
+		.drp_we(gt_drp_we[i])
+		);
+      end
+   endgenerate
+`endif
    
    spi_8bit_rw spi_cflash
      (
@@ -152,6 +195,10 @@ module vna_dsp
 	    3: seq_rdata0 <= 64'd3;
 	    4: seq_rdata0 <= seq_spidata;
 	    5: seq_rdata0 <= seq_xadcdata;
+	    8: seq_rdata0 <= seq_gtdrpdata[0];
+	    9: seq_rdata0 <= seq_gtdrpdata[1];
+	    10: seq_rdata0 <= seq_gtdrpdata[2];
+	    11: seq_rdata0 <= seq_gtdrpdata[3];
 	    default: seq_rdata0 <= seq_address;
 	  endcase
 	

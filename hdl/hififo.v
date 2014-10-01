@@ -17,34 +17,46 @@
  */
 
 `timescale 1ns/1ps
+`define USE_GT_DRP
 
 module hififo_pcie
   (
    // IO pins
-   output [3:0]  pci_exp_txp,
-   output [3:0]  pci_exp_txn,
-   input [3:0] 	 pci_exp_rxp,
-   input [3:0] 	 pci_exp_rxn,
-   input 	 sys_clk_p,
-   input 	 sys_clk_n,
-   input 	 sys_rst_n,
+   output [NLANES-1:0] 	  pci_exp_txp,
+   output [NLANES-1:0] 	  pci_exp_txn,
+   input [NLANES-1:0] 	  pci_exp_rxp,
+   input [NLANES-1:0] 	  pci_exp_rxn,
+   input 		  sys_clk_p,
+   input 		  sys_clk_n,
+   input 		  sys_rst_n,
    // from core
-   output 	 clock,
+   output 		  clock,
+   `ifdef USE_GT_DRP
+   // GT DRP
+   input [9*NLANES-1:0]   gt_drp_address,
+   input [NLANES-1:0] 	  gt_drp_en,
+   input [16*NLANES-1:0]  gt_drp_di,
+   output [16*NLANES-1:0] gt_drp_do,
+   output [NLANES-1:0] 	  gt_drp_ready,
+   input [NLANES-1:0] 	  gt_drp_we,
+   input 		  gt_drp_clock,
+   `endif
    // FIFOs
-   input [7:0] 	 fifo_clock,
-   output [7:0]  fifo_reset,
-   input [7:0] 	 fifo_rw,
-   output [7:0]  fifo_ready,
-   output [63:0] fifo_data_0,
-   output [63:0] fifo_data_1,
-   output [63:0] fifo_data_2,
-   output [63:0] fifo_data_3,
-   input [63:0]  fifo_data_4,
-   input [63:0]  fifo_data_5,
-   input [63:0]  fifo_data_6,
-   input [63:0]  fifo_data_7
+   input [7:0] 		  fifo_clock,
+   output [7:0] 	  fifo_reset,
+   input [7:0] 		  fifo_rw,
+   output [7:0] 	  fifo_ready,
+   output [63:0] 	  fifo_data_0,
+   output [63:0] 	  fifo_data_1,
+   output [63:0] 	  fifo_data_2,
+   output [63:0] 	  fifo_data_3,
+   input [63:0] 	  fifo_data_4,
+   input [63:0] 	  fifo_data_5,
+   input [63:0] 	  fifo_data_6,
+   input [63:0] 	  fifo_data_7
    );
-   
+
+   parameter NLANES = 4;
    parameter ENABLE = 8'b00010001;
    
    wire [15:0] 	 pci_id;
@@ -359,8 +371,8 @@ module hififo_pcie
       .tx_tlast(s_axis_tx_tlast),
       .tx_tvalid(s_axis_tx_tvalid)
    );
-
-   pcie_core_wrap pcie_core_wrap
+   
+   pcie_core_wrap #(.NLANES(NLANES)) pcie_core_wrap
      (.pci_exp_txp(pci_exp_txp),
       .pci_exp_txn(pci_exp_txn),
       .pci_exp_rxp(pci_exp_rxp),
@@ -373,6 +385,23 @@ module hififo_pcie
       .interrupt(interrupt),
       .interrupt_rdy(interrupt_rdy),
       .pci_reset(pci_reset),
+   `ifdef USE_GT_DRP
+      .gt_drp_address(gt_drp_address),
+      .gt_drp_en(gt_drp_en),
+      .gt_drp_di(gt_drp_di),
+      .gt_drp_do(gt_drp_do),
+      .gt_drp_ready(gt_drp_ready),
+      .gt_drp_we(gt_drp_we),
+      .gt_drp_clock(gt_drp_clock),
+   `else
+      .gt_drp_address(1'b0),
+      .gt_drp_en(1'b0),
+      .gt_drp_di(1'b0),
+      .gt_drp_do(),
+      .gt_drp_ready(),
+      .gt_drp_we(1'b0),
+      .gt_drp_clock(1'b0),
+   `endif
       .s_axis_tx_tready(s_axis_tx_tready),
       .s_axis_tx_tdata(s_axis_tx_tdata),
       .s_axis_tx_1dw(s_axis_tx_1dw),
