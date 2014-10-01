@@ -281,7 +281,7 @@ public:
   }
   uint64_t * run(){
     // generate a flush for the read FIFO
-    int increment = 1024;
+    int increment = 512;
     size_t excess_reads = reads_expected % increment;
     if(excess_reads != 0)
       read_req(increment - excess_reads, 0);

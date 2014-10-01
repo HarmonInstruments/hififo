@@ -235,8 +235,11 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, void 
   for(i=0; i < dma->n_pages-1; i++)
     sg_set_page(&dma->sglist[i], dma->page_list[i], PAGE_SIZE, 0);
   /*last*/
-  if (dma->n_pages > 1) 
-    sg_set_page(&dma->sglist[dma->n_pages-1], dma->page_list[dma->n_pages-1], length - ((dma->n_pages-1)*PAGE_SIZE), 0);
+  if (dma->n_pages > 0) 
+    sg_set_page(&dma->sglist[dma->n_pages-1],\
+		dma->page_list[dma->n_pages-1],\
+		length - ((dma->n_pages-1)*PAGE_SIZE),\
+		0);
   
   rc = pci_map_sg(fifo->pdev, dma->sglist, dma->n_pages, DMA_DIRECTION(fifo));
   //printk ("hififo %d: pci_map_sg returned %d\n", fifo->n, rc);
