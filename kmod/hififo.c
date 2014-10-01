@@ -216,7 +216,8 @@ static void hififo_unmap_sg(struct hififo_fifo *fifo, struct hififo_dma *dma){
 /* map and pin user pages */
 static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, void *buf, size_t length){
   int i, rc;
-  dma->n_pages = DIV_ROUND_UP(length, PAGE_SIZE);
+  loff_t start_offset = ((loff_t) buf) & (PAGE_SIZE-1);
+  dma->n_pages = DIV_ROUND_UP(length + start_offset, PAGE_SIZE);
   printk ("hififo %d: start gup\n", fifo->n);
   rc = get_user_pages_fast((loff_t)buf,
 			   dma->n_pages,
@@ -231,11 +232,16 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma, void 
     return -EFAULT;
   }
   /* Map a scatter-gather list to point at the userspace pages */
-  /*first, middle*/
+  /*first*/
+  sg_set_page(&dma->sglist[0],\
+	      dma->page_list[0],\
+	      PAGE_SIZE - start_offset,\
+	      start_offset);
+  /*middle*/
   for(i=0; i < dma->n_pages-1; i++)
     sg_set_page(&dma->sglist[i], dma->page_list[i], PAGE_SIZE, 0);
   /*last*/
-  if (dma->n_pages > 0) 
+  if (dma->n_pages > 1)
     sg_set_page(&dma->sglist[dma->n_pages-1],\
 		dma->page_list[dma->n_pages-1],\
 		length - ((dma->n_pages-1)*PAGE_SIZE),\
@@ -297,7 +303,7 @@ static void hififo_abort(struct hififo_fifo *fifo){
 static int hififo_queue_request(struct hififo_fifo *fifo, char * buf, size_t length){
   size_t copy_length;
   size_t count = 0;
-  if((((size_t) buf) & 0xFFF) != 0)
+  if((((size_t) buf) & 0x1FF) != 0)
     return -EINVAL;
   if((length&0x1FF) != 0){ /* reads must be a multiple of 8 bytes */
     printk("hififo_read: invalid length");
