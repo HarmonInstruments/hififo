@@ -57,6 +57,7 @@ static struct pci_device_id hififo_pci_table[] = {
 };
 
 #define MAX_PAGES 4096 /* Maximum number of pages for one DMA run */
+#define MAX_DMA_REQUEST 65536 /* Maximum number of bytes in one DMA descriptor slot */
 #define REQ_SIZE (MAX_PAGES * 17)
 
 #define REG_INTERRUPT 0
@@ -178,7 +179,7 @@ static int hififo_generate_descriptor(struct hififo_dma * dma, int sg_count)
       if(hw_addr+len != sg_dma_address(&dma->sglist[i+1]))
 	break;
       len += sg_dma_len(&dma->sglist[i++]);
-      if(len >= 1024*1024)
+      if(len >= MAX_DMA_REQUEST)
 	break;
     }
     if(j % 64 == 62){
@@ -191,9 +192,6 @@ static int hififo_generate_descriptor(struct hififo_dma * dma, int sg_count)
   }
   while((j&(64-1)) != 0)
     dma->req[j++] = 0;
-  /*for(i=0; i<64; i++)
-    if(dma->req[i] != 0)
-    //printk("desc[%d] = 0x%.16llx\n", i, dma->req[i]);*/
   return 0;
 }
 
