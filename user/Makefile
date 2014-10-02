@@ -4,7 +4,7 @@ CCFLAGS = -c -Wall -std=gnu++11 -O2 -fPIC
 LDFLAGS = -Wall -std=gnu++11 -fopenmp -march=native -mavx -O0 -fPIC
 CC = g++
 HOST = vna
-OBJS = TimeIt.o AlignedMem.o Sequencer.o Hififo.o
+OBJS = TimeIt.o AlignedMem.o Sequencer.o Hififo.o Spi_Config.o
 
 %.o: %.cpp
 	@echo Building file: $<

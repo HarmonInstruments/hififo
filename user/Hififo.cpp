@@ -88,6 +88,8 @@ ssize_t Hififo::bread(char * buf, size_t count)
 
 ssize_t Hififo::request(void * buf, ssize_t count)
 {
+  if(count == 0)
+    return 0;
   return ioc(buf, count, 1, 0);
 }
 
