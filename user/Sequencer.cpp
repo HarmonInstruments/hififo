@@ -81,9 +81,11 @@ uint64_t * Sequencer::run()
     read_req(increment - excess_reads, 0);
   // generate a flush for the write FIFO
   size_t excess_writes = wcount % increment;
-  size_t fill_count = increment - excess_writes;
-  while(fill_count--)
-    append(0);
+  if(excess_writes != 0){
+    size_t fill_count = increment - excess_writes;
+    while(fill_count--)
+      append(0);
+  }
   wf->request(wbuf, 8*wcount);
   if(reads_expected != 0){
     size_t rc = rf->request(rbuf, 8*reads_expected);
