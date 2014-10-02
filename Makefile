@@ -15,7 +15,7 @@ load_kmod:
 dmesg:
 	make -C kmod dmesg
 runtest:
-	make -C kmod runtest
+	make -C user runtest
 reload:
 	make -C kmod reload
 testbench:
