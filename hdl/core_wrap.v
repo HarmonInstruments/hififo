@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -55,23 +55,23 @@ module pcie_core_wrap
    );
 
    parameter NLANES = 4;
-   
+
    wire 	user_reset;
    wire 	user_lnk_up;
    wire 	cfg_to_turnoff;
    wire 	sys_rst_n_c;
    wire 	sys_clk;
    reg 		cfg_turnoff_ok = 0;
-   always @(posedge clock) 
+   always @(posedge clock)
      begin
 	pci_reset <= user_reset | ~user_lnk_up;
 	// fix this
    	cfg_turnoff_ok <= cfg_to_turnoff; // not if a completion is pending
      end
-         
+
    IBUF   pci_reset_ibuf (.O(sys_rst_n_c), .I(sys_rst_n));
    IBUFDS_GTE2 refclk_ibuf (.O(sys_clk), .ODIV2(), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
-   
+
    pcie_7x_0 pcie_7x_0_i
      (
       // PCI express data pairs
@@ -94,7 +94,7 @@ module pcie_core_wrap
       .m_axis_rx_tvalid(m_axis_rx_tvalid),
       .m_axis_rx_tready(1'b1), // always ready
       .m_axis_rx_tuser(),
-      
+
       .tx_cfg_gnt(1'b1), .rx_np_ok(1'b1), .rx_np_req(1'b1),
       .cfg_trn_pending(1'b0),
       .cfg_pm_halt_aspm_l0s(1'b0), .cfg_pm_halt_aspm_l1(1'b0),
@@ -114,7 +114,7 @@ module pcie_core_wrap
       .cfg_received_func_lvl_rst(),
       .cfg_dcommand(),
       .cfg_bus_number(pci_id[15:8]),
-      .cfg_device_number(pci_id[7:3]),      
+      .cfg_device_number(pci_id[7:3]),
       .cfg_function_number(pci_id[2:0]),
       .cfg_command(),
       .cfg_dstatus(),
@@ -170,10 +170,10 @@ module pcie_core_wrap
       .cfg_err_locked(1'b0),
       .cfg_err_acs(1'b0),
       .cfg_err_internal_uncor(1'b0),
-      
+
       .cfg_err_aer_headerlog(128'h0), .cfg_aer_interrupt_msgnum(5'h0),
       .cfg_err_aer_headerlog_set(), .cfg_aer_ecrc_check_en(), .cfg_aer_ecrc_gen_en(),
-      
+
       .cfg_interrupt(interrupt),
       .cfg_interrupt_rdy(interrupt_rdy),
       .cfg_interrupt_assert(1'b0),
@@ -184,7 +184,7 @@ module pcie_core_wrap
       .cfg_interrupt_msixenable(),
       .cfg_interrupt_msixfm(),
       .cfg_interrupt_stat(1'b0),
-      .cfg_pciecap_interrupt_msgnum(5'h0),      
+      .cfg_pciecap_interrupt_msgnum(5'h0),
       .cfg_msg_received_err_cor(),
       .cfg_msg_received_err_non_fatal(),
       .cfg_msg_received_err_fatal(),
@@ -221,7 +221,7 @@ module pcie_core_wrap
       // these are the clock and reset from the card edge connector
       .sys_clk                                    ( sys_clk ),
       .sys_rst_n                                  ( sys_rst_n_c )
-      );      
+      );
 endmodule
 
 `endif
@@ -263,7 +263,7 @@ module pcie_core_wrap
    );
 
    parameter NLANES = 4;
-      
+
    always @ (posedge clock)
      interrupt_rdy <= interrupt;
 endmodule

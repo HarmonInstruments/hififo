@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -58,10 +58,10 @@ module hififo_pcie
 
    parameter NLANES = 4;
    parameter ENABLE = 8'b00010001;
-   
+
    wire [15:0] 	 pci_id;
    wire 	 pci_reset;
-   
+
    // from RX module
    wire 	 rx_rc_valid;
    wire [5:0] 	 rx_rc_index;
@@ -73,35 +73,35 @@ module hififo_pcie
    reg 		 rx_rr_ready;
    wire [63:0] 	 rx_data;
    wire [5:0] 	 rx_address;
-   
+
    // read completion request to TX module
    wire [31:0] 	 tx_rc_dw2 = {rx_rr_rid_tag, 1'b0, rx_rr_addr[4:0], 2'd0};
    reg [31:0] 	 tx_rc_data;
    reg 		 tx_rc_valid = 0;
    wire 	 tx_rc_ready;
-         
+
    wire [15:0] 	 mux_rr_valid, mux_rr_ready;
    wire [63:0] 	 mux_rr_addr [0:11];
    wire [2:0] 	 mux_rr_tag [0:3];
-   
+
    wire [3:0] 	 mux_wr_valid, mux_wr_ready;
    wire [63:0] 	 mux_wr_data[0:3];
    wire [63:0] 	 mux_wr_addr[0:3];
    wire [4:0] 	 mux_wr_count[0:3];
    wire [3:0] 	 mux_wr_last;
-   
+
    wire [31:0] 	 status[0:7];
-   
+
    // interrupts
    reg 		 interrupt;
    wire 	 interrupt_rdy;
    reg [15:0] 	 interrupt_status = 0;
    wire [15:0] 	 interrupt_individual;
-   
+
    wire [63:0] 	 fifo_data[0:7];
-   
+
    reg [7:0] 	 fifo_reset_sysclock;
-   
+
    assign fifo_data_0 = fifo_data[0];
    assign fifo_data_1 = fifo_data[1];
    assign fifo_data_2 = fifo_data[2];
@@ -110,10 +110,10 @@ module hififo_pcie
    assign fifo_data[5] = fifo_data_5;
    assign fifo_data[6] = fifo_data_6;
    assign fifo_data[7] = fifo_data_7;
-   
+
    reg [1:0] 	 read = 0;
    reg 		 read_in_progress = 0;
-   
+
    always @ (posedge clock)
      begin
 	interrupt <= (interrupt_individual != 0) | (interrupt & ~interrupt_rdy & ~pci_reset);
@@ -139,7 +139,7 @@ module hififo_pcie
 	  tx_rc_valid <= 1'b0;
 	else if(read[1])
 	  tx_rc_valid <= 1'b1;
-	
+
 	if(read[1])
 	  case(rx_rr_addr[4:1])
 	    0:  tx_rc_data <= interrupt_status;
@@ -157,12 +157,12 @@ module hififo_pcie
 	    default: tx_rc_data <= 1'b0;
 	  endcase
      end
-   
+
    genvar i;
    generate
       for (i = 0; i < 8; i = i+1) begin: fifo
 	 // i = 0 to 4: FPC FIFO
-	 if((2**i & ENABLE & 8'h0F) != 0) 
+	 if((2**i & ENABLE & 8'h0F) != 0)
 	   begin
 	      pcie_from_pc_fifo fpc_fifo
 		(.clock(clock),
@@ -199,7 +199,7 @@ module hififo_pcie
 	      assign {mux_rr_addr[i], mux_rr_addr[i+8]} = 0;
 	   end
 	 // i = 4 to 7: TPC FIFO
-	 if((2**i & ENABLE & 8'hF0) != 0) 
+	 if((2**i & ENABLE & 8'hF0) != 0)
 	   begin
 	      hififo_tpc_fifo tpc_fifo
 		(.clock(clock),
@@ -253,7 +253,7 @@ module hififo_pcie
 	   end
       end
    endgenerate
-      
+
    // AXI to core
    wire 	 s_axis_tx_tready;
    wire [63:0] 	 s_axis_tx_tdata;
@@ -264,7 +264,7 @@ module hififo_pcie
    wire 	 m_axis_rx_tvalid;
    wire 	 m_axis_rx_tlast;
    wire [63:0] 	 m_axis_rx_tdata;
-   
+
    pcie_rx rx
      (.clock(clock),
       .reset(pci_reset),
@@ -289,7 +289,7 @@ module hififo_pcie
    wire 	 tx_rr_ready;
    wire [63:0] 	 tx_rr_addr;
    wire [7:0] 	 tx_rr_tag;
-   
+
    rr_mux rr_mux
      (.clock(clock),
       .reset(pci_reset),
@@ -320,7 +320,7 @@ module hififo_pcie
    wire [63:0] 	 tx_wr_data;
    wire [63:0] 	 tx_wr_addr;
    wire [4:0] 	 tx_wr_count;
-   
+
    wr_mux wr_mux
      (.clock(clock),
       .reset(pci_reset),
@@ -342,7 +342,7 @@ module hififo_pcie
       .wro_last(tx_wr_last),
       .wro_count(tx_wr_count)
      );
-   
+
    pcie_tx tx
      (.clock(clock),
       .reset(pci_reset),
@@ -371,7 +371,7 @@ module hififo_pcie
       .tx_tlast(s_axis_tx_tlast),
       .tx_tvalid(s_axis_tx_tvalid)
    );
-   
+
    pcie_core_wrap #(.NLANES(NLANES)) pcie_core_wrap
      (.pci_exp_txp(pci_exp_txp),
       .pci_exp_txn(pci_exp_txn),
@@ -411,6 +411,6 @@ module hififo_pcie
       .m_axis_rx_tlast(m_axis_rx_tlast),
       .m_axis_rx_tdata(m_axis_rx_tdata)
       );
-   
+
 endmodule
 

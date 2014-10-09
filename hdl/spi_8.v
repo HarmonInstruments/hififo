@@ -1,4 +1,4 @@
-/* 
+/*
  * PCI Express to FIFO - Configuration flash SPI
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -29,10 +29,10 @@ module spi_8bit_rw
    output reg 	    mosi,
    input 	    miso
    );
-   
+
    reg [6:0] 	    state = 7'h0;
    reg 		    cs_hold = 0;
-   
+
    always @ (posedge clock)
      begin
 	mosi <= dout[7];
@@ -42,7 +42,7 @@ module spi_8bit_rw
 	     dout <= din[7:0];
 	     state <= 1'd1;
 	  end
-	else if(state != 0) 
+	else if(state != 0)
 	  begin
 	     if(state[3:0] == 15)
 	       dout <= {dout[6:0], miso};
@@ -51,5 +51,5 @@ module spi_8bit_rw
 	sck <= state[3];
 	cs <= (state == 0) && ~cs_hold;
      end
-  
+
 endmodule

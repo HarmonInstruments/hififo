@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -46,13 +46,13 @@ module hififo_tpc_fifo
    );
 
    reg [4:0] 	 state = 0;
-   
+
    wire 	 o_almost_empty;
    wire 	 request_valid;
    wire 	 fifo_read = (wr_ready && wr_valid) || ((state != 0) && (state < 30));
-   
+
    assign wr_count = 16;
-   
+
    always @ (posedge clock)
      begin
 	if(reset)

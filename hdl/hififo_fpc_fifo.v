@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -53,11 +53,11 @@ module pcie_from_pc_fifo
    reg [2:0] 	    p_write = 0; // 512 bytes
    reg [2:0] 	    p_request = 0; // 512 byes
    reg 		    fifo_write_0, fifo_write_1;
-   
+
    wire [63:0] 	    data_fifo_in_data;
    wire 	    data_fifo_ready;
    wire 	    request_valid;
-      
+
    // write enables
    wire 	    rx_valid = pio_wvalid || (rc_valid && rc_tag[7] && (rc_tag[2:0] == fifo_number));
    wire 	    write_reorder = (rc_tag[7:4] == fifo_number) && rc_valid;
@@ -67,7 +67,7 @@ module pcie_from_pc_fifo
    wire 	    request_fifo_read = 0;
 
    assign rr1_tag = p_request[2:0];
-               
+
    always @ (posedge clock)
      begin
 	rr_holdoff <= reset ? 1'b0 : rr1_ready ? 2'd3 : rr_holdoff - (rr_holdoff != 0);
@@ -78,7 +78,7 @@ module pcie_from_pc_fifo
 	fifo_write_1 <= fifo_write_0;
 	rr1_valid <= request_valid && (n_requested < 6) && (rr_holdoff == 0);
      end
-   
+
    genvar 	 i;
    generate
       for (i = 0; i < 8; i = i+1) begin: block_fill
@@ -92,7 +92,7 @@ module pcie_from_pc_fifo
 	 end
       end
    endgenerate
-      
+
    block_ram #(.DBITS(64), .ABITS(9)) bram_reorder
      (.clock(clock),
       .w_data(rx_data),
@@ -101,7 +101,7 @@ module pcie_from_pc_fifo
       .r_data(data_fifo_in_data),
       .r_addr(p_read)
       );
-      
+
    fwft_fifo #(.NBITS(64)) fpc_fifo
      (
       .reset(reset),
@@ -133,5 +133,5 @@ module pcie_from_pc_fifo
       .status(status),
       .interrupt(interrupt)
       );
-     
+
 endmodule

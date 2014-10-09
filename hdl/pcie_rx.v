@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -42,12 +42,12 @@ module pcie_rx
    function [31:0] es; // endian swap
       input [31:0]   x;
       es = {x[7:0], x[15:8], x[23:16], x[31:24]};
-   endfunction   
+   endfunction
 
    reg [12:0] 	     address_q = 0;
    assign completion_tag = address_q[12:5];
    assign address = address_q[5:0];
-   
+
    reg 		     tvalid_q = 0;
    reg [63:0] 	     tdata_q = 0;
    reg 		     tlast_q = 0;
@@ -58,9 +58,9 @@ module pcie_rx
    reg 		     is_write_32 = 0;
    reg 		     is_cpld = 0;
    reg 		     is_read_32_1dw = 0;
-   
+
    //assign rr_rc_dw2 = {rid_tag, 1'b0, rr_rc_lower_addr, 3'd0};
-   
+
    always @ (posedge clock)
      begin
 	tvalid_q <= tvalid;
@@ -79,7 +79,7 @@ module pcie_rx
 	     if(wait_dw23)
 	       address_q <= tdata_q[15:3];
 	     if(wait_dw01)
-	       completion_index <= 6'h3F - {tdata_q[40:38],3'd0};	       
+	       completion_index <= 6'h3F - {tdata_q[40:38],3'd0};
 	     else if(wait_dw45)
 	       completion_index <= completion_index + 1'b1;
 	  end
@@ -92,7 +92,7 @@ module pcie_rx
 	write_valid <= is_write_32 && wait_dw45 && tvalid_q;
 	completion_valid <= is_cpld && wait_dw45 && tvalid_q;
      end
-   
+
    fwft_fifo #(.NBITS(32)) read_fifo
      (
       .reset(reset),
@@ -105,6 +105,6 @@ module pcie_rx
       .o_data({rr_rid_tag, rr_addr}),
       .o_valid(rr_valid),
       .o_almost_empty()
-      );  
-   
+      );
+
 endmodule

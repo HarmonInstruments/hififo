@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -41,7 +41,7 @@ module hififo_fetch_descriptor
    parameter DMSB = 63; // data MSB
    parameter SMSB = 31; // status MSB
    parameter LMSB = 16; // transfer length MSB
-            
+
    reg [1:0] 		  state;
    reg [AMSB-9:0] 	  next_desc_addr;
    reg [AMSB-BS:0] 	  addr_high;
@@ -49,7 +49,7 @@ module hififo_fetch_descriptor
    reg [SMSB-BS:0] 	  interrupt_matchval;
    reg 			  reset_or_abort;
    reg 			  abort = 0;
-   
+
    wire [DMSB:0] 	  desc_data;
    wire 		  desc_ready;
    wire 		  fifo_ready;
@@ -58,36 +58,36 @@ module hififo_fetch_descriptor
    wire 		  write_fifo      = wvalid && (wdata[2:1] == 1); // 2 or 3
    wire 		  write_desc_addr = wvalid && (wdata[3:0] == 4);
    wire 		  write_abort     = wvalid && (wdata[3:0] == 5);
-   
+
    assign rr_addr = {next_desc_addr, 9'd0};
    assign rr_valid = (state == 2);
    assign request_addr = {addr_high,{BS{1'b0}}};
    assign request_valid = request_count != 0;
    assign status = {byte_count, {BS-2{1'b0}}, request_valid, (state == 0)};
-   
+
    always @ (posedge clock)
      begin
 	reset_or_abort <= reset | abort;
 	byte_count <= reset ? 1'b0 : byte_count + request_ack;
-	
+
 	if(write_abort)
 	  abort <= wdata[8];
-	
+
 	if(desc_ready && (desc_data[2:0] == 2) && (request_count == 0))
 	  addr_high <= desc_data[AMSB:BS];
 	else
 	  addr_high <= addr_high + request_ack;
-	
+
 	if(write_interrupt)
 	  interrupt_matchval <= wdata[SMSB:BS];
-	
+
 	if(reset_or_abort)
 	  request_count <= 1'b0;
 	else if(desc_ready && (desc_data[2:0] == 3) && (request_count == 0))
 	  request_count <= desc_data[LMSB:BS];
 	else
 	  request_count <= request_count - request_ack;
-	
+
 	if(reset)
 	  state <= 1'b0;
 	else

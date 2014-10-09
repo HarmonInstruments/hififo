@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -66,7 +66,7 @@ module pcie_tx
    reg 		     rr_is_32_q;
 
    assign wr_ready = (state == 5);
-      
+
    always @(posedge clock)
      begin
 	if(reset)
@@ -158,12 +158,12 @@ module rr_mux4
    reg [63-AMIN:0] 	rro_addr_s;
    assign rro_addr[63:AMIN] = rro_addr_s;
    assign rro_addr[AMIN-1:0] = 0;
-      
+
    always @ (posedge clock)
      begin
 	if(reset)
 	  state <= 4'h0;
-	else 
+	else
 	  begin
 	     casex(state)
 	       4'h0: state <= state + (rri_valid[0] ? 4'd1 : 4'd4);
@@ -226,7 +226,7 @@ module wr_mux
    assign wri_ready[1] = (state == 5) && wro_ready;
    assign wri_ready[2] = (state == 9) && wro_ready;
    assign wri_ready[3] = (state == 13) && wro_ready;
-   assign wro_valid = (state[1:0] == 1);   
+   assign wro_valid = (state[1:0] == 1);
    always @ (posedge clock)
      begin
 	if(reset)
@@ -235,12 +235,12 @@ module wr_mux
 	  begin
 	     casex(state)
 	       default: state <= wri_valid[0] ? 4'h1 :
-				 wri_valid[1] ? 4'h5 : 
+				 wri_valid[1] ? 4'h5 :
 				 wri_valid[2] ? 4'h9 :
 				 wri_valid[3] ? 4'hD : 4'h0;
 	       4'bxx01: state <= state + wro_ready;
 	       4'h2: state <= ~wri_last[0] ? state :
-			      wri_valid[1] ? 4'h5 : 
+			      wri_valid[1] ? 4'h5 :
 			      wri_valid[2] ? 4'h9 :
 			      wri_valid[3] ? 4'hD :
 			      wri_valid[0] ? 4'h1 : 4'h0;
@@ -251,12 +251,12 @@ module wr_mux
 			      wri_valid[1] ? 4'h5 : 4'h0;
 	       4'hA: state <= ~wri_last[2] ? state :
 			      wri_valid[3] ? 4'hD :
-			      wri_valid[0] ? 4'h1 : 
-			      wri_valid[1] ? 4'h5 : 
+			      wri_valid[0] ? 4'h1 :
+			      wri_valid[1] ? 4'h5 :
 			      wri_valid[2] ? 4'h9 : 4'h0;
 	       4'hE: state <= ~wri_last[3] ? state :
 			      wri_valid[0] ? 4'h1 :
-			      wri_valid[1] ? 4'h5 : 
+			      wri_valid[1] ? 4'h5 :
 			      wri_valid[2] ? 4'h9 :
 			      wri_valid[3] ? 4'hD : 4'h0;
 	     endcase
@@ -309,13 +309,13 @@ module rr_mux
    output [63:0] rro_addr,
    output [7:0]  rro_tag
    );
-   
+
    wire [1:0] 	 tag_0, tag_1;
    wire [5:0] 	 tag_2;
    wire [2:0] 	 valid;
    wire [3:0] 	 ready;
    wire [63:0] 	 addr_0, addr_1, addr_2;
-   
+
    rr_mux4 #(.TAG(2), .AMIN(9)) rr_mux4_0
      (.clock(clock),
       .reset(reset),
@@ -351,7 +351,7 @@ module rr_mux
       .rro_ready(ready[1]),
       .rro_addr(addr_1),
       .rro_tag(tag_1));
-   
+
    rr_mux4 #(.TAG(6), .AMIN(3)) rr_mux4_2
      (.clock(clock),
       .reset(reset),
@@ -372,7 +372,7 @@ module rr_mux
 
    wire [6:0] 	 rro_tag_raw;
    assign rro_tag = {rro_tag_raw[6:3], 1'b0, rro_tag_raw[2:0]};
-   
+
    rr_mux4 #(.TAG(7), .AMIN(3)) rr_mux4_012
      (.clock(clock),
       .reset(reset),
@@ -389,7 +389,7 @@ module rr_mux
       .rro_valid(rro_valid),
       .rro_ready(rro_ready),
       .rro_addr(rro_addr),
-      .rro_tag(rro_tag_raw));   
-     
+      .rro_tag(rro_tag_raw));
+
 endmodule
 

@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  * Author: Darrell Harmon
@@ -7,7 +7,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -15,12 +15,12 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/
- * 
+ *
  * clock must be same as FPC FIFO and TPC FIFO
  * reset is sync, active high
  * fpc_ signals go to a from PC fifo
  * tpc_ signals go to a to PC fifo
- * 
+ *
  * User logic interface:
  * wvalid: indicates valid write data is available on wdata and address
  * rvalid: indicates a valid read request
@@ -28,7 +28,7 @@
  * wdata: write data. qualified by wvalid
  * rdata: read data, present read data here RPIPE cycles after rvalid.
  * status: inputs for wait condition instruction
- * 
+ *
  * sequencer instructions:
  * NOP: fpc_data[63:0] = 0
  * WRITE: fpc_data[63:62] = 2
@@ -55,7 +55,7 @@ module sequencer
   (
    input 		  clock,
    input 		  reset,
-   // FPC FIFO   
+   // FPC FIFO
    output 		  fpc_read,
    input 		  fpc_valid,
    input [63:0] 	  fpc_data,
@@ -71,7 +71,7 @@ module sequencer
    input [DBITS-1:0] 	  rdata,
    input [SBITS-1:0] 	  status
    );
-   
+
    parameter RPIPE = 2; // > 2
    parameter ABITS = 16; // 1 to 32
    parameter DBITS = 64; // 1 to 64
@@ -81,12 +81,12 @@ module sequencer
    reg [CBITS-1:0] 	  count = 32'hDEADBEEF;
    reg [1:0] 		  state = 0;
    reg 			  inc = 0;
-   
+
    wire 		  rvalid_next = (state == 3) && tpc_ready;
    wire 		  wvalid_next = (state == 2) && fpc_read;
-   
+
    assign fpc_read = fpc_valid && ((state == 0) || (state == 2));
-   
+
    always @ (posedge clock)
      begin
 	rvalid <= rvalid_next;
@@ -102,7 +102,7 @@ module sequencer
 	endcase
 	if(reset)
 	  state <= 2'd0;
-	else 
+	else
 	  begin
 	     case(state)
 	       0: state <= fpc_read ? fpc_data[63:62] : 2'd0; // idle, nop
@@ -113,23 +113,23 @@ module sequencer
    // delay tpc_write RPIPE cycles from rvalid to allow for a read pipeline
    delay_n #(.N(RPIPE)) delay_tpc_write(.clock(clock), .in(rvalid), .out(tpc_write));
    assign tpc_data = rdata;
-   
+
 endmodule
 
 module delay_n
   (
-   input  clock, 
+   input  clock,
    input  in,
    output out
    );
-   
+
    parameter N = 2;
-   
+
    reg [N-1:0] sreg = 0;
-   
+
    assign out = sreg[N-1];
-   
+
    always @ (posedge clock)
      sreg <= {sreg[N-2:0],in};
-   
+
 endmodule

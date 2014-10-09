@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
-/* 
+/*
  * First word fall through FIFO
  * Copyright 2014 Harmon Instruments
  * Author: Darrell Harmon
@@ -35,9 +35,9 @@ module fwft_fifo
    output 	      o_valid,
    output 	      o_almost_empty
    );
-   
+
    parameter NBITS = 64; // 1 to 72 valid
-   
+
 `ifdef SIM
    // this is for simulation only!!!
    reg [NBITS-1:0]    fifo[0:511];
@@ -48,13 +48,13 @@ module fwft_fifo
    wire 	      c_cken = o_read;
    reg [8:0] 	      p_in, p_out;
    wire [8:0] 	      count = p_in - p_out;
-   
+
    assign o_valid = b_v;
    assign o_data = b_d;
 
    assign i_ready = (count < 384);
    assign o_almost_empty = ((count + a_v + b_v) < 16);
-   
+
    always @ (posedge i_clock)
      begin
 	if(i_valid)
@@ -87,8 +87,8 @@ module fwft_fifo
 	     .DEVICE("7SERIES"),
 	     .FIFO_SIZE ("36Kb"),
 	     .FIRST_WORD_FALL_THROUGH ("TRUE")
-	     ) 
-	 FIFO_DUALCLOCK_MACRO_inst 
+	     )
+	 FIFO_DUALCLOCK_MACRO_inst
 	   (
 	    .ALMOSTEMPTY(o_almost_empty),
 	    .ALMOSTFULL(almostfull),
@@ -108,7 +108,7 @@ module fwft_fifo
 	    );
       end
       else begin : fifo_18
-	 FIFO_DUALCLOCK_MACRO  
+	 FIFO_DUALCLOCK_MACRO
 	   #(
 	     .ALMOST_EMPTY_OFFSET(9'h00F),
 	     .ALMOST_FULL_OFFSET(9'h080),
@@ -116,8 +116,8 @@ module fwft_fifo
 	     .DEVICE("7SERIES"),
 	     .FIFO_SIZE ("18Kb"),
 	     .FIRST_WORD_FALL_THROUGH ("TRUE")
-	     ) 
-	 FIFO_DUALCLOCK_MACRO_inst 
+	     )
+	 FIFO_DUALCLOCK_MACRO_inst
 	   (
 	    .ALMOSTEMPTY(o_almost_empty),
 	    .ALMOSTFULL(almostfull),
@@ -135,7 +135,7 @@ module fwft_fifo
 	    .WRCLK(i_clock),
 	    .WREN(i_valid)
 	    );
-      end	
+      end
    endgenerate
 `endif
 endmodule

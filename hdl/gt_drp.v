@@ -1,4 +1,4 @@
-/* 
+/*
  * PCI Express to FIFO - Xilinx ADC interface
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -14,14 +14,14 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/
- * 
+ *
  * din[15:0] DRP data
  * din[24:16] DRP address
  * din[31] DRP write enable
- * 
+ *
  * dout[15:0] DRP data
  * dout[16] busy
- * 
+ *
  */
 
 `timescale 1ns / 1ps
@@ -42,9 +42,9 @@ module gt_drp
    input 	     drp_ready,
    output reg 	     drp_we
    );
-   
+
    reg [1:0] 	    state = 0;
-   
+
    always @ (posedge clock)
      begin
 	dout[16] <= state != 0;
