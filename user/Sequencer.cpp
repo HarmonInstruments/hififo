@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -29,7 +29,7 @@
 
 using namespace std;
 
-Sequencer::Sequencer(const char * filename_write, const char * filename_read) 
+Sequencer::Sequencer(const char * filename_write, const char * filename_read)
 {
   wf = new Hififo_Write {filename_write};
   rf = new Hififo_Read  {filename_read};
@@ -94,6 +94,7 @@ uint64_t * Sequencer::run()
     }
     rf->wait_all();
   }
+  //cerr << "sequencer run: bytes written = " << 8*wcount << " bytes read = " << 8*reads_expected << "\n";
   wf->wait_all();
   wptr = 0;
   wcount = 0;
