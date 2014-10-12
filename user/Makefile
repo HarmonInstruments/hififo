@@ -1,10 +1,16 @@
-all: test hififo.py
+all: test pyhififo.so
 
-CCFLAGS = -c -Wall -std=gnu++11 -O2 -fPIC
-LDFLAGS = -Wall -std=gnu++11 -fopenmp -march=native -mavx -O0 -fPIC
+CCFLAGS = -c -Wall -std=gnu++11 -O3 -fPIC
+
 CC = g++
 HOST = vna
 OBJS = TimeIt.o AlignedMem.o Sequencer.o Hififo.o Spi_Config.o
+OBJS_PY = Sequencer.o Hififo.o TimeIt.o AlignedMem.o Spi_Config.o pyhififo.o
+
+pyhififo.cpp: pyhififo.pyx
+	cython --cplus pyhififo.pyx
+pyhififo.o: pyhififo.cpp
+	g++ -pthread -fno-strict-aliasing -DNDEBUG -g -fwrapv -O2 -Wall -fPIC -I/usr/include/python2.7 -c pyhififo.cpp
 
 %.o: %.cpp
 	@echo Building file: $<
@@ -16,10 +22,12 @@ test: test.o $(OBJS)
 runtest: test
 	scp test root@$(HOST):
 	ssh root@$(HOST) time ./test
-
-hififo.py: hififo.i $(OBJS)
-	swig -python -c++ hififo.i
-	$(CC) $(CCFLAGS) hififo_wrap.cxx -I/usr/include/python2.7
-	$(CC) -shared hififo_wrap.o $(OBJS) -o _hififo.so -lrt
 clean:
-	rm -rf *_wrap.cxx *.o *.so *.pyc *~ hififo.py
+	rm -rf *_wrap.cxx *.o *.so *.pyc *~ hififo.py pyhififo.cpp
+
+run: pyhififo.so
+	scp test.py pyhififo.so spiflash.py root@$(HOST):
+	ssh root@$(HOST) "time ./test.py"
+
+pyhififo.so: $(OBJS_PY)
+	g++ -pthread -shared -Wl,-O1 -Wl,-Bsymbolic-functions -Wl,-z,relro $(OBJS_PY) -o pyhififo.so -lrt
