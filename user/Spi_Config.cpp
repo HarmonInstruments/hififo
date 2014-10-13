@@ -39,9 +39,7 @@ SPI_Config::SPI_Config(Sequencer *sequencer, int addr)
 
 void SPI_Config::txrx(char * data, int len, int read_offset)
 {
-  cerr << "spi transaction, len = " << len << " read_offset = " << read_offset << "\n";
   for(int i=0; i<len; i++){
-    cerr << "tdata[" << i << "] = " << (0xFF & ((unsigned int) data[i])) << "\n";
     uint64_t d_next = 0xFF & data[i];
     if(len != i+1)
       d_next |= 0x100;
@@ -53,10 +51,7 @@ void SPI_Config::txrx(char * data, int len, int read_offset)
   if(read_offset < 0)
     return;
   uint64_t * rdata64 = seq->run();
-  for(int i=read_offset; i<len; i++)
-    {
-      data[i-read_offset] = rdata64[i];
-      cerr << "rdata[" << i << "] = " << rdata64[i] << "\n";
-    }
+  for(int i=0; i<(len-read_offset); i++)
+    data[i] = rdata64[i];
 }
 
