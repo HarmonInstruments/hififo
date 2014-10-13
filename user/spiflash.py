@@ -10,6 +10,7 @@ class SPIFlash():
         self.spidev = spidev
         self.sector_size = 65536
         self.page_size = 256
+        self.power_up()
 
     def read_id(self):
         idcode = self.spidev.txrx("\x9F", 4)
@@ -19,67 +20,68 @@ class SPIFlash():
     def write_enable(self):
         self.spidev.txrx("\x06")
 
+    def power_up(self):
+        self.spidev.txrx("\xAB")
+    def power_down(self):
+        self.spidev.txrx("\xB9")
+
     def read(self, address, count):
         return self.spidev.txrx(struct.pack(">BI", 0x0B, address << 8), count)
 
     def read_status(self):
-        status = self.spidev.txrx("\x05", 1)[0]
-        print "status =", hex(ord(status))
-        return status
+        return ord(self.spidev.txrx("\x05", 1)[0])
 
     def wait_busy(self):
-        print "b"
-        for i in range(2000):
+        for i in range(10000):
             status = self.read_status()
-            if (ord(status[0]) & 0x01) == 0:
+            if (status & 0x01) == 0:
                 return
             time.sleep(0.001)
-        raise
+        raise RuntimeError("SPI flash timeout")
 
     def page_program(self, address, data):
         if len(data) != 256:
-            raise Error("page program length must be 256 bytes")
+            raise RuntimeError("page program length must be 256 bytes")
         if (address & 0xFF0000FF) != 0:
-            raise Error("page program address must be aligned to 256 bytes")
+            raise RuntimeError("page program address must be aligned to 256 bytes")
         self.write_enable()
         self.spidev.txrx(struct.pack(">I", 0x02000000 | address) + data)
-        self.wait_busy()
-
-    def bulk_erase(self):
-        self.write_enable()
-        self.spidev.txrx("\C7")
         self.wait_busy()
 
     def sector_erase(self, address):
         self.write_enable()
         if (address & 0xFF00FFFF) != 0:
-            raise Error("sector erase address must be aligned to 65536 bytes")
+            raise RuntimeError("sector erase address must be aligned to 65536 bytes")
         self.spidev.txrx(struct.pack(">I", 0xD8000000 | address))
         self.wait_busy()
 
     def write(self, address, data):
         if (address & (self.sector_size - 1)) != 0:
-            raise Error("write address must be aligned to sector size")
-        pages = len(data) / self.page_size
-        if len(data) != pages*self.page_size:
-            pages += 1
-            data += "\x00" * (pages*self.page_size - len(data))
+            raise RuntimeError("write address must be aligned to sector size")
         sectors = len(data) / self.sector_size
         if len(data) != sectors*self.sector_size:
             sectors += 1
+            data += "\x00" * (sectors*self.sector_size - len(data))
         for i in range(sectors):
             print("erasing sector {} of flash".format(i))
             self.sector_erase(address + self.sector_size * i)
-        print("erase complete")
-        for i in range(pages):
-            startbyte = self.page_size*i
-            #print("programming page {} of flash".format(i))
-            self.page_program(address + self.page_size * i, data[startbyte:startbyte+256])
-            print ".",
-        print("program complete")
+            print("writing sector {} of flash".format(i))
+            for j in range(self.sector_size / self.page_size):
+                startbyte = self.sector_size*i + self.page_size*j
+                self.page_program(address + startbyte, data[startbyte:startbyte+256])
+            print("reading back sector {} of flash".format(i))
+            rb = self.read(address + self.sector_size*i, self.sector_size)
+            if rb != data[i*self.sector_size:(i+1)*self.sector_size]:
+                raise RuntimeError("SPI flash sector write failed")
+        print("flash write complete")
 
     def write_file(self, address, filename):
         data = ""
         with open(filename, "rb") as f:
             data = f.read()
         self.write(address, data)
+
+    def read_file(self, address, filename, length):
+        data = self.read(address, length)
+        with open(filename, "wb") as f:
+            f.write(data)
