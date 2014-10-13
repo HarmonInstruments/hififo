@@ -179,7 +179,7 @@ static int hififo_generate_descriptor(struct hififo_dma * dma, int sg_count)
     while(i+1 < sg_count){
       if(hw_addr+len != sg_dma_address(&dma->sglist[i+1]))
 	break;
-      len += sg_dma_len(&dma->sglist[i++]);
+      len += sg_dma_len(&dma->sglist[++i]);
       if(len >= MAX_DMA_REQUEST)
 	break;
     }
