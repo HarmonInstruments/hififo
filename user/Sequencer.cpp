@@ -45,7 +45,7 @@ Sequencer::Sequencer(const char * filename_write, const char * filename_read)
 void Sequencer::append(uint64_t data)
 {
   if(wcount == bufsize)
-    throw;
+    throw std::runtime_error( "sequencer request exceeds write buffer size in " __FILE__ );
   wbuf[wcount++] = data;
 }
 
@@ -68,6 +68,8 @@ void Sequencer::write_single(uint32_t address, uint64_t data)
 
 void Sequencer::read_req(size_t count, uint32_t address)
 {
+  if((reads_expected + count) > bufsize)
+    throw std::runtime_error( "sequencer request exceeds read buffer size in " __FILE__ );
   append(3L<<62 | 1L<<61 | count << 32 | address);
   reads_expected += count;
 }
