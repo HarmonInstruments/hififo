@@ -5,7 +5,7 @@ CCFLAGS = -c -Wall -std=gnu++11 -O3 -fPIC
 CC = g++
 HOST = vna
 OBJS = TimeIt.o AlignedMem.o Sequencer.o Hififo.o Spi_Config.o
-OBJS_PY = Sequencer.o Hififo.o TimeIt.o AlignedMem.o Spi_Config.o pyhififo.o
+OBJS_PY = Sequencer.o Hififo.o TimeIt.o AlignedMem.o Spi_Config.o Xilinx_DRP.o pyhififo.o
 
 pyhififo.cpp: pyhififo.pyx
 	cython --cplus pyhififo.pyx
@@ -26,7 +26,7 @@ clean:
 	rm -rf *_wrap.cxx *.o *.so *.pyc *~ hififo.py pyhififo.cpp
 
 run: pyhififo.so
-	scp test.py pyhififo.so spiflash.py root@$(HOST):
+	scp ../top.bin test.py xadc.py pyhififo.so spiflash.py root@$(HOST):
 	ssh root@$(HOST) "time ./test.py"
 
 pyhififo.so: $(OBJS_PY)

@@ -63,3 +63,20 @@ cdef class PyTimeIt:
         del self.thisptr
     def elapsed(self):
         return self.thisptr.elapsed()
+
+cdef extern from "Xilinx_DRP.h":
+    cdef cppclass Xilinx_DRP:
+        Xilinx_DRP(Sequencer * sequencer, int address) except +
+        int read(int addr)
+        void write(int addr, int data)
+
+cdef class PyXilinx_DRP:
+    cdef Xilinx_DRP *thisptr
+    def __cinit__(self, PySequencer sequencer, int address):
+        self.thisptr = new Xilinx_DRP(sequencer.thisptr, address)
+    def __dealloc__(self):
+        del self.thisptr
+    def read(self, int address):
+        return self.thisptr.read(address)
+    def read(self, int address, int data):
+        self.thisptr.write(address, data)
