@@ -52,7 +52,7 @@ cdef class PySpi_Config:
 
 cdef extern from "TimeIt.h":
     cdef cppclass TimeIt:
-        SPI_Config() except +
+        TimeIt() except +
         double elapsed()
 
 cdef class PyTimeIt:
