@@ -33,7 +33,7 @@ Sequencer::Sequencer(const char * filename_write, const char * filename_read)
 {
   wf = new Hififo_Write {filename_write};
   rf = new Hififo_Read  {filename_read};
-  bufsize = 131072;
+  bufsize = 1048576;
   wptr = 0;
   wcount = 0;
   reads_expected = 0;
