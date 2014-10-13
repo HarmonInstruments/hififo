@@ -44,7 +44,7 @@ void SPI_Config::txrx(char * data, int len, int read_offset)
     if(len != i+1)
       d_next |= 0x100;
     seq->write_single(spi_address, d_next);
-    seq->wait(2*128);
+    seq->wait(128);
     if((read_offset >= 0) && (i >= read_offset))
       seq->read_req(1, spi_address);
   }
