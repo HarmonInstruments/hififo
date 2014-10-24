@@ -49,7 +49,8 @@ module hififo_tpc_fifo
 
    wire 	 o_almost_empty;
    wire 	 request_valid;
-   wire 	 fifo_read = (wr_ready && wr_valid) || ((state != 0) && (state < 30));
+   wire 	 fifo_read = (wr_ready && wr_valid)
+		 || ((state != 0) && (state < 30));
 
    assign wr_count = 16;
 
@@ -58,7 +59,8 @@ module hififo_tpc_fifo
 	if(reset)
 	  wr_valid <= 1'b0;
 	else
-	  wr_valid <= ((state == 0) || (state > 29)) && request_valid && ~o_almost_empty;
+	  wr_valid <= ((state == 0) || (state > 29))
+	    && request_valid && ~o_almost_empty;
 	wr_last <= state == 29;
 	if(reset)
 	  state <= 1'b0;

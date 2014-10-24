@@ -74,7 +74,8 @@ module pcie_rx
 	       begin
 		  is_write_32 <= tdata_q[30:24] == 7'b1000000;
 		  is_cpld <= tdata_q[30:24] == 7'b1001010;
-		  is_read_32_1dw <= (tdata_q[30:24] == 7'b0000000) && (tdata_q[9:0] == 10'd1);
+		  is_read_32_1dw <= (tdata_q[30:24] == 7'b0000000)
+		    && (tdata_q[9:0] == 10'd1);
 	       end
 	     if(wait_dw23)
 	       address_q <= tdata_q[15:3];
@@ -97,7 +98,8 @@ module pcie_rx
      (
       .reset(reset),
       .i_clock(clock),
-      .i_data({previous_dw[31:8], tdata_q[9:2]}), // RID (16), tag (8), addr[9:2]
+      // RID (16), tag (8), addr[9:2]
+      .i_data({previous_dw[31:8], tdata_q[9:2]}),
       .i_valid(is_read_32_1dw && wait_dw23 && tvalid_q),
       .i_ready(),
       .o_clock(clock),

@@ -91,7 +91,8 @@ module sequencer
      begin
 	rvalid <= rvalid_next;
 	wvalid <= wvalid_next;
-	address <= (state == 0) ? fpc_data[ABITS-1:0] : address + (inc && (rvalid || wvalid));
+	address <= (state == 0) ? fpc_data[ABITS-1:0] :
+		   address + (inc && (rvalid || wvalid));
 	wdata <= fpc_data[DBITS-1:0];
 	inc <= (state == 0) ? fpc_data[61] : inc;
 	case(state)
@@ -106,12 +107,14 @@ module sequencer
 	  begin
 	     case(state)
 	       0: state <= fpc_read ? fpc_data[63:62] : 2'd0; // idle, nop
-	       default: state <= (count[CBITS-1:1] == 0) ? 2'd0 : state; // wait, read, write
+	       // wait, read, write
+	       default: state <= (count[CBITS-1:1] == 0) ? 2'd0 : state;
 	     endcase
 	  end
      end
    // delay tpc_write RPIPE cycles from rvalid to allow for a read pipeline
-   delay_n #(.N(RPIPE)) delay_tpc_write(.clock(clock), .in(rvalid), .out(tpc_write));
+   delay_n #(.N(RPIPE)) delay_tpc_write
+     (.clock(clock), .in(rvalid), .out(tpc_write));
    assign tpc_data = rdata;
 
 endmodule

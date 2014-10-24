@@ -59,10 +59,15 @@ module pcie_from_pc_fifo
    wire 	    request_valid;
 
    // write enables
-   wire 	    rx_valid = pio_wvalid || (rc_valid && rc_tag[7] && (rc_tag[2:0] == fifo_number));
+   wire 	    rx_valid = pio_wvalid
+		    || (rc_valid && rc_tag[7] && (rc_tag[2:0] == fifo_number));
    wire 	    write_reorder = (rc_tag[7:4] == fifo_number) && rc_valid;
-   wire 	    write_last = rc_valid && (rc_tag[7:4] == fifo_number) && (rc_index == 6'h3F);
-   wire 	    rc_last = (rc_valid && rc_tag[7] && (rc_tag[2:0] == fifo_number) && (rc_index[5:0] == 63));
+   wire 	    write_last = rc_valid
+		    && (rc_tag[7:4] == fifo_number) && (rc_index == 6'h3F);
+   wire 	    rc_last = rc_valid
+		    && rc_tag[7]
+		    && (rc_tag[2:0] == fifo_number)
+		    && (rc_index[5:0] == 63);
    wire [2:0] 	    n_requested = p_request - p_read[8:6];
    wire 	    request_fifo_read = 0;
 
@@ -70,10 +75,15 @@ module pcie_from_pc_fifo
 
    always @ (posedge clock)
      begin
-	rr_holdoff <= reset ? 1'b0 : rr1_ready ? 2'd3 : rr_holdoff - (rr_holdoff != 0);
-	p_read <= reset ? 1'b0 : p_read + ((p_read[8:6] != p_write[2:0]) && data_fifo_ready);
-	p_write <= reset ? 1'b0 : p_write + (block_filled[p_write[2:0]]);
-	p_request <= reset ? 1'b0 : p_request + (rr1_ready && rr1_valid);
+	rr_holdoff <= reset ? 1'b0 :
+		      rr1_ready ? 2'd3 :
+		      rr_holdoff - (rr_holdoff != 0);
+	p_read <= reset ? 1'b0 :
+		  p_read + ((p_read[8:6] != p_write[2:0]) && data_fifo_ready);
+	p_write <= reset ? 1'b0 :
+		   p_write + (block_filled[p_write[2:0]]);
+	p_request <= reset ? 1'b0 :
+		     p_request + (rr1_ready && rr1_valid);
 	fifo_write_0 <= ((p_read[8:6] != p_write[2:0]) && data_fifo_ready);
 	fifo_write_1 <= fifo_write_0;
 	rr1_valid <= request_valid && (n_requested < 6) && (rr_holdoff == 0);

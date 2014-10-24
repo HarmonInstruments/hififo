@@ -116,7 +116,8 @@ module hififo_pcie
 
    always @ (posedge clock)
      begin
-	interrupt <= (interrupt_individual != 0) | (interrupt & ~interrupt_rdy & ~pci_reset);
+	interrupt <= (interrupt_individual != 0)
+	  | (interrupt & ~interrupt_rdy & ~pci_reset);
 	if(pci_reset | (read[1] && (rx_rr_addr[4:1] == 0)))
 	  interrupt_status <= 16'd0;
 	else
@@ -125,8 +126,10 @@ module hififo_pcie
 	  fifo_reset_sysclock <= 8'hFF;
 	else if(rx_wr_valid)
 	  case(rx_address)
-	    3: fifo_reset_sysclock <= fifo_reset_sysclock | rx_data[7:0]; // set
-	    4: fifo_reset_sysclock <= fifo_reset_sysclock & ~rx_data[7:0]; // clear
+	    // set
+	    3: fifo_reset_sysclock <= fifo_reset_sysclock | rx_data[7:0];
+	    // clear
+	    4: fifo_reset_sysclock <= fifo_reset_sysclock & ~rx_data[7:0];
 	  endcase
 	if(tx_rc_ready)
 	  read_in_progress <= 1'b0;
@@ -208,8 +211,13 @@ module hififo_pcie
 		 .interrupt(interrupt_individual[2*i+1:2*i]),
 		 // write data
 		 .rx_data(rx_data),
-		 .rx_data_valid((rx_rc_valid && rx_rc_tag[7] && (rx_rc_tag[2:0] == i)) || (rx_wr_valid && (rx_address == 8+i))),
-		 .rc_last(rx_rc_valid && rx_rc_tag[7] && (rx_rc_tag[2:0] == i) && (rx_rc_index[5:0] == 63)),
+		 .rx_data_valid((rx_rc_valid && rx_rc_tag[7]
+				 && (rx_rc_tag[2:0] == i))
+				|| (rx_wr_valid && (rx_address == 8+i))),
+		 .rc_last(rx_rc_valid
+			  && rx_rc_tag[7]
+			  && (rx_rc_tag[2:0] == i)
+			  && (rx_rc_index[5:0] == 63)),
 		 // read request
 		 .rr_valid(mux_rr_valid[i]),
 		 .rr_ready(mux_rr_ready[i]),
@@ -248,8 +256,19 @@ module hififo_pcie
 	 else
 	   begin
 	      wire reset_sync_out;
-	      sync sync(.clock(fifo_clock[i]), .in(fifo_reset_sysclock[i]), .out(reset_sync_out));
-	      pulse_stretch #(.NB(4)) stretch_reset(.clock(fifo_clock[i]), .in(reset_sync_out), .out(fifo_reset[i]));
+
+	      sync sync(
+			.clock(fifo_clock[i]),
+			.in(fifo_reset_sysclock[i]),
+			.out(reset_sync_out)
+			);
+
+	      pulse_stretch #(.NB(4)) stretch_reset
+		(
+		 .clock(fifo_clock[i]),
+		 .in(reset_sync_out),
+		 .out(fifo_reset[i])
+		 );
 	   end
       end
    endgenerate

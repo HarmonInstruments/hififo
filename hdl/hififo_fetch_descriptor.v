@@ -42,22 +42,22 @@ module hififo_fetch_descriptor
    parameter SMSB = 31; // status MSB
    parameter LMSB = 16; // transfer length MSB
 
-   reg [1:0] 		  state;
-   reg [AMSB-9:0] 	  next_desc_addr;
-   reg [AMSB-BS:0] 	  addr_high;
-   reg [SMSB-BS:0] 	  byte_count;
-   reg [SMSB-BS:0] 	  interrupt_matchval;
-   reg 			  reset_or_abort;
-   reg 			  abort = 0;
+   reg [1:0] 	    state;
+   reg [AMSB-9:0]   next_desc_addr;
+   reg [AMSB-BS:0]  addr_high;
+   reg [SMSB-BS:0]  byte_count;
+   reg [SMSB-BS:0]  interrupt_matchval;
+   reg 		    reset_or_abort;
+   reg 		    abort = 0;
 
-   wire [DMSB:0] 	  desc_data;
-   wire 		  desc_ready;
-   wire 		  fifo_ready;
+   wire [DMSB:0]    desc_data;
+   wire 	    desc_ready;
+   wire 	    fifo_ready;
 
-   wire 		  write_interrupt = wvalid && (wdata[2:0] == 1);
-   wire 		  write_fifo      = wvalid && (wdata[2:1] == 1); // 2 or 3
-   wire 		  write_desc_addr = wvalid && (wdata[3:0] == 4);
-   wire 		  write_abort     = wvalid && (wdata[3:0] == 5);
+   wire write_interrupt = wvalid && (wdata[2:0] == 1);
+   wire write_fifo      = wvalid && ((wdata[2:0] == 2) || (wdata[2:0] == 3));
+   wire write_desc_addr = wvalid && (wdata[3:0] == 4);
+   wire write_abort     = wvalid && (wdata[3:0] == 5);
 
    assign rr_addr = {next_desc_addr, 9'd0};
    assign rr_valid = (state == 2);
@@ -112,8 +112,10 @@ module hififo_fetch_descriptor
 	  next_desc_addr <= wdata[AMSB:9];
      end
 
-   one_shot one_shot_i0(.clock(clock), .in(interrupt_matchval == byte_count), .out(interrupt[0]));
-   one_shot one_shot_i1(.clock(clock), .in(state == 0), .out(interrupt[1]));
+   one_shot one_shot_i0
+     (.clock(clock), .in(interrupt_matchval == byte_count), .out(interrupt[0]));
+   one_shot one_shot_i1
+     (.clock(clock), .in(state == 0), .out(interrupt[1]));
 
    fwft_fifo #(.NBITS(AMSB+1)) fifo
      (

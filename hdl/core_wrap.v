@@ -70,7 +70,11 @@ module pcie_core_wrap
      end
 
    IBUF   pci_reset_ibuf (.O(sys_rst_n_c), .I(sys_rst_n));
-   IBUFDS_GTE2 refclk_ibuf (.O(sys_clk), .ODIV2(), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
+   IBUFDS_GTE2 refclk_ibuf (.O(sys_clk),
+			    .ODIV2(),
+			    .I(sys_clk_p),
+			    .CEB(1'b0),
+			    .IB(sys_clk_n));
 
    pcie_7x_0 pcie_7x_0_i
      (
@@ -172,7 +176,8 @@ module pcie_core_wrap
       .cfg_err_internal_uncor(1'b0),
 
       .cfg_err_aer_headerlog(128'h0), .cfg_aer_interrupt_msgnum(5'h0),
-      .cfg_err_aer_headerlog_set(), .cfg_aer_ecrc_check_en(), .cfg_aer_ecrc_gen_en(),
+      .cfg_err_aer_headerlog_set(), .cfg_aer_ecrc_check_en(),
+      .cfg_aer_ecrc_gen_en(),
 
       .cfg_interrupt(interrupt),
       .cfg_interrupt_rdy(interrupt_rdy),
@@ -201,8 +206,8 @@ module pcie_core_wrap
       .pl_directed_link_change(2'd0), .pl_directed_link_width(2'd0),
       .pl_directed_link_speed(1'b0), .pl_directed_link_auton(1'b0),
       .pl_upstream_prefer_deemph(1'b1), .pl_sel_lnk_rate(), .pl_sel_lnk_width(),
-      .pl_ltssm_state(), .pl_lane_reversal_mode(),
-      .pl_phy_lnk_up(), .pl_tx_pm_state(), .pl_rx_pm_state(), .pl_link_upcfg_cap(),
+      .pl_ltssm_state(), .pl_lane_reversal_mode(), .pl_phy_lnk_up(),
+      .pl_tx_pm_state(), .pl_rx_pm_state(), .pl_link_upcfg_cap(),
       .pl_link_gen2_cap(), .pl_link_partner_gen2_supported(),
       .pl_initial_link_width(), .pl_directed_change_done(),
       .pl_received_hot_rst(), .pl_transmit_hot_rst(1'b0),
