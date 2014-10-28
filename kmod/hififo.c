@@ -181,35 +181,6 @@ static int hififo_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static int hififo_generate_descriptor(struct hififo_dma * dma, int sg_count)
-{
-	int i, j=0;
-	size_t len;
-	dma_addr_t hw_addr;
-	for (i = 0; i < sg_count; i++) {
-		hw_addr = sg_dma_address(&dma->sglist[i]);
-		len = sg_dma_len(&dma->sglist[i]);
-		while(i+1 < sg_count){
-			if(hw_addr+len != sg_dma_address(&dma->sglist[i+1]))
-				break;
-			len += sg_dma_len(&dma->sglist[++i]);
-			if(len >= MAX_DMA_REQUEST)
-				break;
-		}
-		if(j % 64 == 62){
-			dma->req[j] = 0;
-			dma->req[j+1] = HIFIFO_DESCRIPTOR(
-				dma->req_dma_addr + 8*(j + 2));
-			j+= 2;
-		}
-		dma->req[j++] = HIFIFO_ADDR(hw_addr);
-		dma->req[j++] = HIFIFO_COUNT(len);
-	}
-	while((j&(64-1)) != 0)
-		dma->req[j++] = 0;
-	return 0;
-}
-
 /* unmap and unpin pages */
 static void hififo_unmap_sg(struct hififo_fifo *fifo, struct hififo_dma *dma)
 {
@@ -236,7 +207,7 @@ static void hififo_unmap_sg(struct hififo_fifo *fifo, struct hififo_dma *dma)
 static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma,
 			 void *buf, size_t length)
 {
-	int i, rc;
+	int i, rc, pages_mapped;
 	loff_t start_offset = ((loff_t) buf) & (PAGE_SIZE-1);
 	dma->n_pages = DIV_ROUND_UP(length + start_offset, PAGE_SIZE);
 	printk (KERN_INFO DEVICE_NAME\
@@ -266,27 +237,37 @@ static int hififo_map_sg(struct hififo_fifo *fifo, struct hififo_dma *dma,
 		sg_set_page(&dma->sglist[i], dma->page_list[i], PAGE_SIZE, 0);
 	/*last*/
 	if (dma->n_pages > 1)
-		sg_set_page(&dma->sglist[dma->n_pages-1],
-			    dma->page_list[dma->n_pages-1],
-			    start_offset + length - ((dma->n_pages-1)*PAGE_SIZE),
-			    0);
-
-	rc = pci_map_sg(fifo->pdev,
-			dma->sglist,
-			dma->n_pages,
-			DMA_DIRECTION(fifo));
+		sg_set_page
+			(&dma->sglist[dma->n_pages-1],
+			 dma->page_list[dma->n_pages-1],
+			 start_offset + length - ((dma->n_pages-1)*PAGE_SIZE),
+			 0);
+	pages_mapped = pci_map_sg
+		(fifo->pdev, dma->sglist, dma->n_pages, DMA_DIRECTION(fifo));
 	dma->mapped = 1;
-	hififo_generate_descriptor(dma, rc);
-	rc = wait_event_interruptible_timeout(fifo->queue_dma,
-					      readlle(fifo->local_base) & 0x1,
-					      fifo->timeout);
-	// check rc
-	writeqle(HIFIFO_DESCRIPTOR(dma->req_dma_addr), fifo->local_base);
-	fifo->bytes_requested += length;
-	dma->bytes_requested = fifo->bytes_requested;
+
+	for(i=0; i<pages_mapped; i++) {
+		rc = wait_event_interruptible_timeout
+			(fifo->queue_dma,
+			 readlle(fifo->local_base) & 0x1,
+			 fifo->timeout);
+		// check rc
+		writeqle(HIFIFO_ADDR(sg_dma_address(&dma->sglist[i])),
+			 fifo->local_base);
+		writeqle(HIFIFO_COUNT(sg_dma_len(&dma->sglist[i])),
+			 fifo->local_base);
+		fifo->bytes_requested += sg_dma_len(&dma->sglist[i]);
+		dma->bytes_requested = fifo->bytes_requested;
+	}
+
+
+	if(rc > 10)
+		return 0;
+
 	printk("hififo %d: end gup, doing request, "	\
 	       "addr = 0x%.16llx, %d jiffies remain\n",
 	       fifo->n, dma->req_dma_addr, rc);
+
 	return 0;
 }
 
