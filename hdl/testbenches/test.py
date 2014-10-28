@@ -93,12 +93,12 @@ def run_test(dut):
     a = yield pci.read(2*8, 4)
     print a
     for i in range(17000):
-        yield RisingEdge(clock)    
+        yield RisingEdge(clock)
     a = yield pci.read(64 + 1*8, 4)
     print a
     a = yield pci.read(64 + 5*8, 4)
     print a
-    
+
     check_end = 0x40000/8
 
     if not (pci.write_data_expected[:check_end] == pci.write_data[:check_end]).all():
@@ -147,7 +147,7 @@ class PCIe_host():
         tlp[3] = endianswap(data)
         tlp[4] = endianswap(data >> 32)
         self.txqueue.put(tlp)
-    
+
     @cocotb.coroutine
     def read(self, address, tag=0):
         """ 32 bit read """
@@ -159,7 +159,7 @@ class PCIe_host():
         self.txqueue.put(tlp)
         yield self.read_wait.wait()
         raise ReturnValue(self.read_data)
-    
+
     def complete(self, address, reqid_tag):
         address &= 0xFFFF8
         address = address >> 3
@@ -275,46 +275,30 @@ class PCIe_host():
         d = np.fromstring(data.tostring(), dtype = 'uint64')
         self.write_data[addr_start:addr_start + length/2] = d
         #print "d[{}] = 0x{:016X}".format(0, d[0])
-    def write_fifo(self, fifo, address):
-        self.write(address | 4, (8+fifo)*8)
-
-    def command_append(self, command):
-        if (self.command_start % 64) == 62:
-            self.completion_data[self.command_start] = 0
-            self.command_start += 2
-            self.completion_data[self.command_start-1] = 4 | (self.command_start * 8)
-        self.completion_data[self.command_start] = command
-        self.command_start += 1
+    def write_fifo(self, fifo, data):
+        self.write(data, (8+fifo)*8)
 
     def create_command(self, fifo, address, count):
-        start_addr = self.command_start
         for i in range(2):
             if count < 0x200:
                 break
-            self.command_append(2 | address)
-            self.command_append(3 | 0x200)
+            self.write_fifo(fifo, 2 | address)
+            self.write_fifo(fifo, 3 | 0x200)
             address += 0x200
             count -= 0x200
-        for i in range(26):
-            self.command_append(0)
         for i in range(4):
             if count < 0x400:
                 break
-            self.command_append(2 | address)
-            self.command_append(3 | 0x400)
+            self.write_fifo(fifo, 2 | address)
+            self.write_fifo(fifo, 3 | 0x400)
             address += 0x400
             count -= 0x400
         while count >= 0x200:
-            self.command_append(2 | address)
-            self.command_append(3 | 0x200)
+            self.write_fifo(fifo, 2 | address)
+            self.write_fifo(fifo, 3 | 0x200)
             address += 0x200
             count -= 0x200
-        self.command_append(4 | 0x200)
-        extras = self.command_start % 64
-        if extras != 0:
-            self.command_start += 64 - extras
-        self.write_fifo(fifo=fifo, address=0xDEAD00000000 | (start_addr*8))
-        print self.command_start
+        self.write_fifo(fifo, 4 | 0x200)
 
 def seq_wait(x):
     return 1<<60 | x
