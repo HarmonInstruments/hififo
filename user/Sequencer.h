@@ -21,23 +21,22 @@
 #include "Hififo.h"
 
 class Sequencer {
- private:
-  Hififo_Write * wf;
-  Hififo_Read * rf;
-  AlignedMem *amem;
-  uint64_t * wbuf;
-  uint64_t * rbuf;
-  size_t wcount;
-  size_t wptr;
-  size_t bufsize;
-  size_t reads_expected;
- public:
-  Sequencer(const char * filename_write, const char * filename_read);
-  void append(uint64_t data);
-  void wait(uint64_t count);
-  void write_req(size_t count, uint32_t address, uint64_t * data);
-  void write_single(uint32_t address, uint64_t data);
-  void read_req(size_t count, uint32_t address);
-  uint64_t * run();
+private:
+	Hififo * wf;
+	Hififo * rf;
+	uint64_t * wbuf;
+	uint64_t * rbuf;
+	size_t wcount;
+	size_t wptr;
+	size_t bufsize;
+	size_t reads_expected, reads_requested;
+public:
+	Sequencer(const char * filename_write, const char * filename_read);
+	void append(uint64_t data);
+	void wait(uint64_t count);
+	void write_req(size_t count, uint32_t address, uint64_t * data);
+	void write_single(uint32_t address, uint64_t data);
+	void read_req(size_t count, uint32_t address);
+	uint64_t * run();
 };
 

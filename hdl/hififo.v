@@ -80,8 +80,8 @@ module hififo_pcie
    reg 		 tx_rc_valid = 0;
    wire 	 tx_rc_ready;
 
-   wire [15:0] 	 mux_rr_valid, mux_rr_ready;
-   wire [63:0] 	 mux_rr_addr [0:11];
+   wire [3:0] 	 mux_rr_valid, mux_rr_ready;
+   wire [63:0] 	 mux_rr_addr [0:3];
    wire [2:0] 	 mux_rr_tag [0:3];
 
    wire [3:0] 	 mux_wr_valid, mux_wr_ready;
@@ -180,13 +180,10 @@ module hififo_pcie
 		 .pio_wvalid(rx_wr_valid && (rx_address == 8+i)),
 		 .rx_data(rx_data),
 		 // read request
-		 .rr0_valid(mux_rr_valid[i]),
-		 .rr0_ready(mux_rr_ready[i]),
-		 .rr0_addr(mux_rr_addr[i]),
-		 .rr1_valid(mux_rr_valid[i+8]),
-		 .rr1_ready(mux_rr_ready[i+8]),
-		 .rr1_addr(mux_rr_addr[i+8]),
-		 .rr1_tag(mux_rr_tag[i]),
+		 .rr_valid(mux_rr_valid[i]),
+		 .rr_ready(mux_rr_ready[i]),
+		 .rr_addr(mux_rr_addr[i]),
+		 .rr_tag(mux_rr_tag[i]),
 		 // FIFO
 		 .fifo_clock(fifo_clock[i]),
 		 .fifo_read(fifo_rw[i] & ~fifo_reset[i]),
@@ -198,8 +195,8 @@ module hififo_pcie
 	   begin
 	      assign mux_rr_tag[i] = 0;
 	      assign fifo_data[i] = 0;
-	      assign {mux_rr_valid[i], mux_rr_valid[i+8]} = 0;
-	      assign {mux_rr_addr[i], mux_rr_addr[i+8]} = 0;
+	      assign mux_rr_valid[i] = 0;
+	      assign mux_rr_addr[i] = 0;
 	   end
 	 // i = 4 to 7: TPC FIFO
 	 if((2**i & ENABLE & 8'hF0) != 0)
@@ -211,17 +208,7 @@ module hififo_pcie
 		 .interrupt(interrupt_individual[2*i+1:2*i]),
 		 // write data
 		 .rx_data(rx_data),
-		 .rx_data_valid((rx_rc_valid && rx_rc_tag[7]
-				 && (rx_rc_tag[2:0] == i))
-				|| (rx_wr_valid && (rx_address == 8+i))),
-		 .rc_last(rx_rc_valid
-			  && rx_rc_tag[7]
-			  && (rx_rc_tag[2:0] == i)
-			  && (rx_rc_index[5:0] == 63)),
-		 // read request
-		 .rr_valid(mux_rr_valid[i]),
-		 .rr_ready(mux_rr_ready[i]),
-		 .rr_addr(mux_rr_addr[i]),
+		 .rx_data_valid(rx_wr_valid && (rx_address == 8+i)),
 		 // write request to TX
 		 .wr_valid(mux_wr_valid[i-4]),
 		 .wr_ready(mux_wr_ready[i-4]),
@@ -243,8 +230,6 @@ module hififo_pcie
 	      assign mux_wr_count[i-4] = 0;
 	      assign mux_wr_addr[i-4] = 0;
 	      assign mux_wr_valid[i-4] = 0;
-	      assign mux_rr_valid[i] = 0;
-	      assign mux_rr_addr[i] = 0;
 	   end
 	 if((2**i & ENABLE) == 0)
 	   begin
@@ -312,24 +297,16 @@ module hififo_pcie
    rr_mux rr_mux
      (.clock(clock),
       .reset(pci_reset),
-      .rri_valid(mux_rr_valid[11:0]),
-      .rri_ready(mux_rr_ready[11:0]),
+      .rri_valid(mux_rr_valid[3:0]),
+      .rri_ready(mux_rr_ready[3:0]),
       .rri_addr_0(mux_rr_addr[0]),
       .rri_addr_1(mux_rr_addr[1]),
       .rri_addr_2(mux_rr_addr[2]),
       .rri_addr_3(mux_rr_addr[3]),
-      .rri_addr_4(mux_rr_addr[4]),
-      .rri_addr_5(mux_rr_addr[5]),
-      .rri_addr_6(mux_rr_addr[6]),
-      .rri_addr_7(mux_rr_addr[7]),
-      .rri_addr_8(mux_rr_addr[8]),
-      .rri_addr_9(mux_rr_addr[9]),
-      .rri_addr_10(mux_rr_addr[10]),
-      .rri_addr_11(mux_rr_addr[11]),
-      .rri_tag_8(mux_rr_tag[0]),
-      .rri_tag_9(mux_rr_tag[1]),
-      .rri_tag_10(mux_rr_tag[2]),
-      .rri_tag_11(mux_rr_tag[3]),
+      .rri_tag_0(mux_rr_tag[0]),
+      .rri_tag_1(mux_rr_tag[1]),
+      .rri_tag_2(mux_rr_tag[2]),
+      .rri_tag_3(mux_rr_tag[3]),
       .rro_valid(tx_rr_valid),
       .rro_ready(tx_rr_ready),
       .rro_addr(tx_rr_addr),

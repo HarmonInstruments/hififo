@@ -22,16 +22,11 @@ module hififo_fetch_descriptor
   (
    input 		  clock,
    input 		  reset,
-   output reg [LMSB-BS:0] request_count,
    output [AMSB:0] 	  request_addr,
    output 		  request_valid,
    input 		  request_ack,
    input [DMSB:0] 	  wdata,
    input 		  wvalid,
-   input 		  rc_last,
-   output 		  rr_valid, // RR0 is descriptor fetch
-   output [AMSB:0] 	  rr_addr,
-   input 		  rr_ready,
    output [SMSB:0] 	  status,
    output [1:0] 	  interrupt
    );
@@ -40,94 +35,47 @@ module hififo_fetch_descriptor
    parameter AMSB = 63; // address MSB
    parameter DMSB = 63; // data MSB
    parameter SMSB = 31; // status MSB
-   parameter LMSB = 16; // transfer length MSB
+   parameter CBITS = 22; // count bits
+   parameter CMSB = CBITS - 1; // count MSB
 
-   reg [1:0] 	    state;
-   reg [AMSB-9:0]   next_desc_addr;
-   reg [AMSB-BS:0]  addr_high;
-   reg [SMSB-BS:0]  byte_count;
-   reg [SMSB-BS:0]  interrupt_matchval;
+   reg [CMSB-BS:0]  p_current = 0, p_interrupt = 0, p_stop = 0;
    reg 		    reset_or_abort;
-   reg 		    abort = 0;
-
-   wire [DMSB:0]    desc_data;
-   wire 	    desc_ready;
-   wire 	    fifo_ready;
+   reg 		    abort = 1;
+   reg [AMSB-CBITS:0] addr_high;
 
    wire write_interrupt = wvalid && (wdata[2:0] == 1);
-   wire write_fifo      = wvalid && ((wdata[2:0] == 2) || (wdata[2:0] == 3));
-   wire write_desc_addr = wvalid && (wdata[3:0] == 4);
-   wire write_abort     = wvalid && (wdata[3:0] == 5);
+   wire write_stop      = wvalid && (wdata[2:0] == 2);
+   wire write_addr_high = wvalid && (wdata[2:0] == 3);
+   wire write_abort     = wvalid && (wdata[2:0] == 4);
 
-   assign rr_addr = {next_desc_addr, 9'd0};
-   assign rr_valid = (state == 2);
-   assign request_addr = {addr_high,{BS{1'b0}}};
-   assign request_valid = request_count != 0;
-   assign status = {byte_count, {BS-2{1'b0}}, request_valid, (state == 0)};
+   assign request_addr = {addr_high,p_current,{BS{1'b0}}};
+   assign request_valid = (p_current != p_stop) && ~request_ack;
+   assign status = {p_current, {BS{1'b0}}};
 
    always @ (posedge clock)
      begin
 	reset_or_abort <= reset | abort;
-	byte_count <= reset ? 1'b0 : byte_count + request_ack;
 
 	if(write_abort)
 	  abort <= wdata[8];
 
-	if(desc_ready && (desc_data[2:0] == 2) && (request_count == 0))
-	  addr_high <= desc_data[AMSB:BS];
-	else
-	  addr_high <= addr_high + request_ack;
+	if(write_addr_high)
+	  addr_high <= wdata[AMSB:CBITS];
+
+	p_stop <= reset_or_abort ? 1'b0 :
+		  write_stop ? wdata[CMSB:BS] : p_stop;
 
 	if(write_interrupt)
-	  interrupt_matchval <= wdata[SMSB:BS];
+	  p_interrupt <= wdata[CMSB:BS];
 
-	if(reset_or_abort)
-	  request_count <= 1'b0;
-	else if(desc_ready && (desc_data[2:0] == 3) && (request_count == 0))
-	  request_count <= desc_data[LMSB:BS];
-	else
-	  request_count <= request_count - request_ack;
-
-	if(reset)
-	  state <= 1'b0;
-	else
-	  begin
-	     case(state)
-	       // idle - nothing requested, next_desc_addr not valid
-	       0: state <= write_desc_addr;
-	       // have the descriptor addr, wait for FIFO
-	       1: state <= state + fifo_ready;
-	       // read request completed
-	       2: state <= state + rr_ready;
-	       // wait for it to finish
-	       3: begin
-		  if(rc_last && write_desc_addr)
-		    state <= 1'b1;
-		  else if(rc_last)
-		    state <= 1'b0;
-	       end
-	     endcase
-	  end
-      	if(write_desc_addr)
-	  next_desc_addr <= wdata[AMSB:9];
+	p_current <= reset_or_abort ? 1'b0 : p_current + request_ack;
      end
 
    one_shot one_shot_i0
-     (.clock(clock), .in(interrupt_matchval == byte_count), .out(interrupt[0]));
-   one_shot one_shot_i1
-     (.clock(clock), .in(state == 0), .out(interrupt[1]));
+     (.clock(clock),
+      .in(p_current == p_interrupt),
+      .out(interrupt[0]));
 
-   fwft_fifo #(.NBITS(AMSB+1)) fifo
-     (
-      .reset(reset_or_abort),
-      .i_clock(clock),
-      .i_data(wdata),
-      .i_valid(write_fifo),
-      .i_ready(fifo_ready),
-      .o_clock(clock),
-      .o_read(desc_ready & (request_count == 0)),
-      .o_data(desc_data),
-      .o_valid(desc_ready),
-      .o_almost_empty()
-      );
+   assign interrupt[1] = interrupt[0];
+
 endmodule

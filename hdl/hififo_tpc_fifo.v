@@ -27,11 +27,7 @@ module hififo_tpc_fifo
    // writes and read completions
    input [63:0]  rx_data,
    input 	 rx_data_valid,
-   input 	 rc_last,
    // to PCI TX
-   output 	 rr_valid,
-   output [63:0] rr_addr,
-   input 	 rr_ready,
    output reg 	 wr_valid = 0,
    input 	 wr_ready,
    output [63:0] wr_data,
@@ -88,16 +84,11 @@ module hififo_tpc_fifo
      (
       .clock(clock),
       .reset(reset),
-      .request_count(),
       .request_addr(wr_addr),
       .request_valid(request_valid),
       .request_ack(fifo_read),
       .wvalid(rx_data_valid),
       .wdata(rx_data),
-      .rc_last(rc_last),
-      .rr_valid(rr_valid),
-      .rr_addr(rr_addr),
-      .rr_ready(rr_ready),
       .status(status),
       .interrupt(interrupt)
       );

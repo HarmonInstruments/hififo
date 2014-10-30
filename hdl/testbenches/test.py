@@ -57,18 +57,26 @@ def run_test(dut):
     pci.write(0xF, 0*8)
     # release reset
     pci.write(0xFF, 4*8)
+    # release aborts
+    for i in range(8):
+        pci.write_fifo(fifo=i, data = 0x0 | 4)
     #FPC
     for i in range(64*32):
-        pci.completion_data[0x21000/8+i] = i | 0xDEADBEEF00000000
-        pci.write_data_expected[0x21000/8+i] = i | 0xDEADBEEF00000000
-    pci.create_command(fifo = 0, address = 0x21000, count = 0x4000)
+        pci.completion_data[0x00000/8+i] = i | 0xDEADBEEE00000000
+        pci.write_data_expected[0x00000/8+i] = i | 0xDEADBEEE00000000
+    pci.write_fifo(fifo=0, data = 0x0000 | 3)
+    pci.write_fifo(fifo=0, data = 0x4000 | 2)
     # TPC
     for i in range(0x8000/8):
-        pci.write_data_expected[0x10000/8+i] = i
-    pci.create_command(fifo = 6, address = 0x300010000, count = 0x8000)
-    pci.create_command(fifo = 4, address = 0x21000, count = 0xC000)
+        pci.write_data_expected[0x400000/8+i] = i
+    pci.write_fifo(fifo=6, data = 0x400000 | 3)
+    pci.write_fifo(fifo=6, data = 0x8000 | 2)
+
+    pci.write_fifo(fifo=4, data = 0x0000 | 3)
+    pci.write_fifo(fifo=4, data = 0xC000 | 2)
+
     # FPC sequencer
-    seq_base = 0x40000/8
+    seq_base = 0x400000/8
     seq_write = 2 << 62
     seq_read = 3 << 62
     seq_wait = 1 << 62
@@ -83,8 +91,12 @@ def run_test(dut):
     pci.completion_data[seq_base + 7] = seq_read | seq_inc | (58 << 32) | 0
     pci.completion_data[seq_base + 8] = seq_write | seq_inc | (1 << 32) | 0x4
     pci.completion_data[seq_base + 9] = 0x55
-    pci.create_command(fifo = 1, address = 0x40000, count = 0x200)
-    pci.create_command(fifo = 5, address = 0x50000, count = 0x200)
+
+    pci.write_fifo(fifo=1, data = 0x400000 | 3)
+    pci.write_fifo(fifo=1, data = 0x200 | 2)
+
+    pci.write_fifo(fifo=5, data = 0x800000 | 3)
+    pci.write_fifo(fifo=5, data = 0x200 | 2)
 
     a = yield pci.read(0*8, 2)
     print a
@@ -99,7 +111,7 @@ def run_test(dut):
     a = yield pci.read(64 + 5*8, 4)
     print a
 
-    check_end = 0x40000/8
+    check_end = 0x800000/8
 
     if not (pci.write_data_expected[:check_end] == pci.write_data[:check_end]).all():
         print "FAIL - data, expected"
@@ -131,9 +143,9 @@ class PCIe_host():
         self.rxdata = []
         self.requested = 0
         self.txqueue = Queue.Queue()
-        self.completion_data = np.zeros(1048576, dtype = 'uint64')
-        self.write_data = np.zeros(1048576, dtype = 'uint64')
-        self.write_data_expected = np.zeros(1048576, dtype = 'uint64')
+        self.completion_data = np.zeros(4*1048576, dtype = 'uint64')
+        self.write_data = np.zeros(4*1048576, dtype = 'uint64')
+        self.write_data_expected = np.zeros(4*1048576, dtype = 'uint64')
         self.errors = 0
         self.read_tag = 0
         self.read_data = 0
@@ -277,28 +289,6 @@ class PCIe_host():
         #print "d[{}] = 0x{:016X}".format(0, d[0])
     def write_fifo(self, fifo, data):
         self.write(data, (8+fifo)*8)
-
-    def create_command(self, fifo, address, count):
-        for i in range(2):
-            if count < 0x200:
-                break
-            self.write_fifo(fifo, 2 | address)
-            self.write_fifo(fifo, 3 | 0x200)
-            address += 0x200
-            count -= 0x200
-        for i in range(4):
-            if count < 0x400:
-                break
-            self.write_fifo(fifo, 2 | address)
-            self.write_fifo(fifo, 3 | 0x400)
-            address += 0x400
-            count -= 0x400
-        while count >= 0x200:
-            self.write_fifo(fifo, 2 | address)
-            self.write_fifo(fifo, 3 | 0x200)
-            address += 0x200
-            count -= 0x200
-        self.write_fifo(fifo, 4 | 0x200)
 
 def seq_wait(x):
     return 1<<60 | x

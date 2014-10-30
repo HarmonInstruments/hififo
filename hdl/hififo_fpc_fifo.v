@@ -32,13 +32,10 @@ module pcie_from_pc_fifo
    input 	    rc_valid,
    input 	    pio_wvalid,
    // read request
-   output 	    rr0_valid, // RR0 is descriptor fetch
-   output [63:0]    rr0_addr,
-   input 	    rr0_ready,
-   output reg 	    rr1_valid, // RR1 is data fetch
-   output [63:0]    rr1_addr,
-   input 	    rr1_ready,
-   output [2:0]     rr1_tag,
+   output reg 	    rr_valid, // RR is data fetch
+   output [63:0]    rr_addr,
+   input 	    rr_ready,
+   output [2:0]     rr_tag,
    // FIFO
    input 	    fifo_clock, // for all FIFO signals
    input 	    fifo_read,
@@ -59,34 +56,29 @@ module pcie_from_pc_fifo
    wire 	    request_valid;
 
    // write enables
-   wire 	    rx_valid = pio_wvalid
-		    || (rc_valid && rc_tag[7] && (rc_tag[2:0] == fifo_number));
+   wire 	    rx_valid = pio_wvalid;
    wire 	    write_reorder = (rc_tag[7:4] == fifo_number) && rc_valid;
    wire 	    write_last = rc_valid
 		    && (rc_tag[7:4] == fifo_number) && (rc_index == 6'h3F);
-   wire 	    rc_last = rc_valid
-		    && rc_tag[7]
-		    && (rc_tag[2:0] == fifo_number)
-		    && (rc_index[5:0] == 63);
    wire [2:0] 	    n_requested = p_request - p_read[8:6];
    wire 	    request_fifo_read = 0;
 
-   assign rr1_tag = p_request[2:0];
+   assign rr_tag = p_request[2:0];
 
    always @ (posedge clock)
      begin
 	rr_holdoff <= reset ? 1'b0 :
-		      rr1_ready ? 2'd3 :
+		      rr_ready ? 2'd3 :
 		      rr_holdoff - (rr_holdoff != 0);
 	p_read <= reset ? 1'b0 :
 		  p_read + ((p_read[8:6] != p_write[2:0]) && data_fifo_ready);
 	p_write <= reset ? 1'b0 :
 		   p_write + (block_filled[p_write[2:0]]);
 	p_request <= reset ? 1'b0 :
-		     p_request + (rr1_ready && rr1_valid);
+		     p_request + (rr_ready && rr_valid);
 	fifo_write_0 <= ((p_read[8:6] != p_write[2:0]) && data_fifo_ready);
 	fifo_write_1 <= fifo_write_0;
-	rr1_valid <= request_valid && (n_requested < 6) && (rr_holdoff == 0);
+	rr_valid <= request_valid && (n_requested < 6) && (rr_holdoff == 0);
      end
 
    genvar 	 i;
@@ -130,16 +122,11 @@ module pcie_from_pc_fifo
      (
       .clock(clock),
       .reset(reset),
-      .request_count(),
-      .request_addr(rr1_addr),
-      .request_ack(rr1_ready),
+      .request_addr(rr_addr),
+      .request_ack(rr_ready),
       .request_valid(request_valid),
       .wvalid(rx_valid),
       .wdata(rx_data),
-      .rc_last(rc_last),
-      .rr_valid(rr0_valid),
-      .rr_addr(rr0_addr),
-      .rr_ready(rr0_ready),
       .status(status),
       .interrupt(interrupt)
       );
