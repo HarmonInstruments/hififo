@@ -41,7 +41,7 @@ module pcie_core_wrap
    output [16*NLANES-1:0] gt_drp_do,
    output [NLANES-1:0] 	  gt_drp_ready,
    input [NLANES-1:0] 	  gt_drp_we,
-   input 		  gt_drp_clock,
+   output		  gt_drp_clock,
    // AXI to core
    output 		  s_axis_tx_tready,
    input [63:0] 	  s_axis_tx_tdata,
@@ -254,7 +254,7 @@ module pcie_core_wrap
    output [16*NLANES-1:0] gt_drp_do,
    output [NLANES-1:0] 	  gt_drp_ready,
    input [NLANES-1:0] 	  gt_drp_we,
-   input 		  gt_drp_clock,
+   output 		  gt_drp_clock,
    // AXI to core
    output reg 		  s_axis_tx_tready = 0,
    input [63:0] 	  s_axis_tx_tdata,

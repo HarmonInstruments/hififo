@@ -136,19 +136,16 @@ module vna_dsp
       );
 
 `ifdef USE_GT_DRP
-   wire [2:0] 	    gt_drp_clkdiv;
-   gt_drp_clock gt_drp_clockgen
-     (.clock(clock), .drpclock(gt_drp_clock), .clkdiv(gt_drp_clkdiv));
    genvar 	    i;
    generate
       for (i = 0; i < `NLANES; i = i+1) begin: gtdrp
 	 gt_drp gt_drp_n
 	       (
 		.clock(clock),
+		.drp_clock(gt_drp_clock),
 		.write(seq_wvalid && (seq_address == 8+i)),
 		.din(seq_wdata),
 		.dout(seq_gtdrpdata[i]),
-		.clkdiv(gt_drp_clkdiv),
 		.drp_address(gt_drp_address[8+9*i:9*i]),
 		.drp_en(gt_drp_en[i]),
 		.drp_di(gt_drp_di[15+16*i:16*i]),

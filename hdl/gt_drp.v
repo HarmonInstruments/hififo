@@ -29,46 +29,44 @@
 module gt_drp
   (
    input 	     clock,
+   input 	     drp_clock,
    input 	     write,
    input [63:0]      din,
    output reg [16:0] dout = 0,
-   // common clock from gt_drp_clock
-   input [2:0] 	     clkdiv,
    // GT DRP
    output reg [8:0]  drp_address,
-   output reg 	     drp_en = 0,
+   output 	     drp_en,
    output reg [15:0] drp_di,
    input [15:0]      drp_do,
    input 	     drp_ready,
    output reg 	     drp_we
    );
 
-   reg [1:0] 	    state = 0;
+   reg [3:0] 	    state = 0;
+   reg 		    drp_en_clock = 0;
+
+   wire 	    drp_ready_sync;
+
+   sync sync_ready (.clock(clock), .in(drp_ready), .out(drp_ready_sync));
+
+   sync_oneshot sync_en (.clock(drp_clock), .in(drp_en_clock), .out(drp_en));
 
    always @ (posedge clock)
      begin
 	dout[16] <= state != 0;
-	state <= write ? 2'd1 :
-		 (state == 1) && (clkdiv == 0) ? 2'd2 :
-		 (clkdiv == 0) && drp_ready ? 2'd0 :
-		 (state == 2) && (clkdiv == 0) ? 2'd3 :
-		 state;
-	drp_en <= (state == 1) && (clkdiv == 0) ? 1'b1 :
-		  (state == 2) && (clkdiv == 0) ? 1'b0 :
-		  drp_en;
+	case(state)
+	  0: state <= write;
+	  12: state <= write ? 1'b1 : state + drp_ready_sync;
+	  default: state <= state + 1'b1;
+	endcase
+	drp_en_clock <= (state > 1) && (state < 12);
 	if(write)
 	  begin
 	     drp_di <= din[15:0];
 	     drp_address <= din[24:16];
 	     drp_we <= din[31];
 	  end
-	if((clkdiv == 0) && drp_ready)
+	if(state == 13)
 	  dout[15:0] <= drp_do;
      end
-endmodule
-
-module gt_drp_clock (input clock, output drpclock, output reg [2:0] clkdiv = 0);
-   always @ (posedge clock)
-     clkdiv <= clkdiv + 1'b1;
-   assign drpclock = clkdiv[2];
 endmodule

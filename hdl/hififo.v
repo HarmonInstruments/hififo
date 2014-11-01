@@ -39,7 +39,7 @@ module hififo_pcie
    output [16*NLANES-1:0] gt_drp_do,
    output [NLANES-1:0] 	  gt_drp_ready,
    input [NLANES-1:0] 	  gt_drp_we,
-   input 		  gt_drp_clock,
+   output 		  gt_drp_clock,
    `endif
    // FIFOs
    input [7:0] 		  fifo_clock,
@@ -396,7 +396,7 @@ module hififo_pcie
       .gt_drp_do(),
       .gt_drp_ready(),
       .gt_drp_we(1'b0),
-      .gt_drp_clock(1'b0),
+      .gt_drp_clock(),
    `endif
       .s_axis_tx_tready(s_axis_tx_tready),
       .s_axis_tx_tdata(s_axis_tx_tdata),

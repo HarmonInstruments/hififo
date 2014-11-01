@@ -60,3 +60,17 @@ module pulse_stretch
 	out <= in | (count != 0);
      end
 endmodule
+
+module sync_oneshot(input clock, input in, output out);
+   wire synced;
+   sync sync(.clock(clock), .in(in), .out(synced));
+   one_shot one_shot(.clock(clock), .in(synced), .out(out));
+endmodule
+
+module sync_pulse (input clock_in, input clock_out, input in, output out);
+   parameter NB = 3;
+   wire stretched;
+   pulse_stretch #(.NB(NB)) stretch
+     (.clock(clock_in), .in(in), .out(stretched));
+   sync_oneshot(.clock(clock_out), .in(stretched), .out(out));
+endmodule
