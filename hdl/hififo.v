@@ -95,8 +95,8 @@ module hififo_pcie
    // interrupts
    reg 		 interrupt;
    wire 	 interrupt_rdy;
-   reg [15:0] 	 interrupt_status = 0;
-   wire [15:0] 	 interrupt_individual;
+   reg [7:0] 	 interrupt_status = 0;
+   wire [7:0] 	 interrupt_individual;
 
    wire [63:0] 	 fifo_data[0:7];
 
@@ -119,7 +119,7 @@ module hififo_pcie
 	interrupt <= (interrupt_individual != 0)
 	  | (interrupt & ~interrupt_rdy & ~pci_reset);
 	if(pci_reset | (read[1] && (rx_rr_addr[4:1] == 0)))
-	  interrupt_status <= 16'd0;
+	  interrupt_status <= 1'b0;
 	else
 	  interrupt_status <= interrupt_status | interrupt_individual;
 	if(pci_reset)
@@ -171,7 +171,7 @@ module hififo_pcie
 		(.clock(clock),
 		 .reset(fifo_reset_sysclock[i]),
 		 .status(status[i]),
-		 .interrupt(interrupt_individual[2*i+1:2*i]),
+		 .interrupt(interrupt_individual[i]),
 		 .fifo_number(i[1:0]),
 		 // read completion
 		 .rc_valid(rx_rc_valid),
@@ -205,7 +205,7 @@ module hififo_pcie
 		(.clock(clock),
 		 .reset(fifo_reset_sysclock[i]),
 		 .status(status[i]),
-		 .interrupt(interrupt_individual[2*i+1:2*i]),
+		 .interrupt(interrupt_individual[i]),
 		 // write data
 		 .rx_data(rx_data),
 		 .rx_data_valid(rx_wr_valid && (rx_address == 8+i)),
@@ -235,7 +235,7 @@ module hififo_pcie
 	   begin
 	      assign status[i] = 0;
 	      assign fifo_ready[i] = 0;
-	      assign interrupt_individual[2*i+1:2*i] = 0;
+	      assign interrupt_individual[i] = 0;
 	      assign fifo_reset[i] = 1'b1;
 	   end
 	 else

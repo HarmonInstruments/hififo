@@ -20,15 +20,15 @@
 
 module hififo_fetch_descriptor
   (
-   input 		  clock,
-   input 		  reset,
-   output [AMSB:0] 	  request_addr,
-   output 		  request_valid,
-   input 		  request_ack,
-   input [DMSB:0] 	  wdata,
-   input 		  wvalid,
-   output [SMSB:0] 	  status,
-   output [1:0] 	  interrupt
+   input 	   clock,
+   input 	   reset,
+   output [AMSB:0] request_addr,
+   output 	   request_valid,
+   input 	   request_ack,
+   input [DMSB:0]  wdata,
+   input 	   wvalid,
+   output [SMSB:0] status,
+   output 	   interrupt
    );
 
    parameter BS = 0; // bit shift, number of LSBs to ignore in address
@@ -74,8 +74,6 @@ module hififo_fetch_descriptor
    one_shot one_shot_i0
      (.clock(clock),
       .in(p_current == p_interrupt),
-      .out(interrupt[0]));
-
-   assign interrupt[1] = interrupt[0];
+      .out(interrupt));
 
 endmodule

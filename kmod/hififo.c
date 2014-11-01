@@ -351,10 +351,11 @@ hififo_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	int i;
 	printk(KERN_INFO DEVICE_NAME " interrupt: sr = %x\n", sr);
 	for(i=0; i<MAX_FIFOS; i++){
+		if(!(sr & (1<<i)))
+			continue;
 		if(drvdata->fifo[i] == NULL)
 			continue;
-		if(sr & (0x3<<(2*i)))
-			wake_up_all(&drvdata->fifo[i]->queue);
+		wake_up_all(&drvdata->fifo[i]->queue);
 	}
 	return IRQ_HANDLED;
 }

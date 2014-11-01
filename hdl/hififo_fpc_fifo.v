@@ -20,27 +20,27 @@
 
 module pcie_from_pc_fifo
   (
-   input 	    clock,
-   input 	    reset,
-   output [31:0]    status,
-   output [1:0]     interrupt,
-   input [1:0] 	    fifo_number,
+   input 	 clock,
+   input 	 reset,
+   output [31:0] status,
+   output 	 interrupt,
+   input [1:0] 	 fifo_number,
    // read completion
-   input [63:0]     rx_data,
-   input [7:0] 	    rc_tag,
-   input [5:0] 	    rc_index,
-   input 	    rc_valid,
-   input 	    pio_wvalid,
+   input [63:0]  rx_data,
+   input [7:0] 	 rc_tag,
+   input [5:0] 	 rc_index,
+   input 	 rc_valid,
+   input 	 pio_wvalid,
    // read request
-   output reg 	    rr_valid, // RR is data fetch
-   output [63:0]    rr_addr,
-   input 	    rr_ready,
-   output [2:0]     rr_tag,
+   output reg 	 rr_valid, // RR is data fetch
+   output [63:0] rr_addr,
+   input 	 rr_ready,
+   output [2:0]  rr_tag,
    // FIFO
-   input 	    fifo_clock, // for all FIFO signals
-   input 	    fifo_read,
-   output [63:0]    fifo_read_data,
-   output 	    fifo_read_valid
+   input 	 fifo_clock, // for all FIFO signals
+   input 	 fifo_read,
+   output [63:0] fifo_read_data,
+   output 	 fifo_read_valid
    );
 
    // FIFO

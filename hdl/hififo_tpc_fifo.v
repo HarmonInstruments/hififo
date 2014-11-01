@@ -23,7 +23,7 @@ module hififo_tpc_fifo
    input 	 clock,
    input 	 reset,
    output [31:0] status,
-   output [1:0]  interrupt,
+   output 	 interrupt,
    // writes and read completions
    input [63:0]  rx_data,
    input 	 rx_data_valid,
