@@ -42,6 +42,8 @@ static inline void init_array(uint64_t *buf, size_t count, uint64_t * start_coun
 void writer(Hififo *f, size_t count, int use_hp)
 {
 	ssize_t bs = 256*1024;
+	if(count < bs)
+		bs = count;
 	uint64_t wcount = 0xDEADE00000000000;
 	TimeIt timer{};
 	for(uint64_t i=0; i<count; i+=bs){
@@ -98,7 +100,7 @@ void checker(Hififo *f, size_t count, int use_hp)
 
 int main ( int argc, char **argv )
 {
-	uint64_t length = 1048576L*640;
+	uint64_t length = 1048576L*128;
 
 	Hififo f2{"/dev/hififo_0_2"};
 	Hififo f6{"/dev/hififo_0_6"};
@@ -108,8 +110,6 @@ int main ( int argc, char **argv )
 	Sequencer seq{"/dev/hififo_0_1", "/dev/hififo_0_5"};
 
 	//uint64_t * sbuf;
-
-	TimeIt timer{};
 
 	//SPI_Config spi(&seq, 4);
 	//char spibuf_in[256];
@@ -148,7 +148,7 @@ int main ( int argc, char **argv )
 	writer(&f2, length, 1);
 	checker(&f6, length, 1);
 
-/*	std::cerr << "f0 -> f4\n";
+	std::cerr << "f0 -> f4\n";
 #pragma omp parallel sections
 	{
 #pragma omp section
@@ -160,17 +160,20 @@ int main ( int argc, char **argv )
 			writer(&f0, length, 1);
 		}
 	}
-*/
-/*
+
 	std::cerr << "f2 -> f6\n";
-	std::thread t_reader (checker, &f6, length, 1);
+	std::thread t_reader (checker, &f6, 2*length, 1);
 	std::thread t_writer (writer, &f2, length, 1);
 	t_writer.join();
 	t_reader.join();
 
-	cerr << "running timeout tests\n";
+	f4.set_timeout(0.1);
+
+	cerr << "running timeout tests 0 to 4\n";
 	writer(&f0, 1024, 1);
+
+	TimeIt timer{};
 	checker(&f4, length, 1);
-*/
+	cerr << timer.elapsed();
   return 0;
 }

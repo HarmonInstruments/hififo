@@ -16,20 +16,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
-#include <stdio.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
 #include <fcntl.h>
-#include <stdint.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
-#include <time.h>
-#include <thread>
 #include <iostream>
 #include <stdexcept>
 
-#include "TimeIt.h"
 #include "Hififo.h"
 
 using namespace std;
@@ -38,9 +31,6 @@ using namespace std;
 #define IOC_GET 0x11
 #define IOC_PUT 0x12
 #define IOC_TIMEOUT 0x13
-
-#define min(x,y) ((x) > (y) ? (y) : (x))
-#define max(x,y) ((x) < (y) ? (y) : (x))
 
 void * Hififo::get_buffer(size_t count)
 {
@@ -56,15 +46,10 @@ void Hififo::put_buffer(size_t count)
 		throw std::runtime_error( "hififo device put ioctl failed" );
 }
 
-void Hififo::put_all()
-{
-	if(ioctl(fd, _IO('f', IOC_PUT), 0) != 0)
-		throw std::runtime_error( "hififo device put ioctl failed" );
-}
-
 void Hififo::set_timeout(double timeout)
 {
-	if(ioctl(fd, _IO('f', IOC_TIMEOUT), 1000000000L*timeout) != 0)
+	unsigned long ultimeout = (unsigned long) (1000*timeout);
+	if(ioctl(fd, _IO('f', IOC_TIMEOUT), ultimeout) != 0)
 		throw std::runtime_error( "hififo set timeout failed" );
 }
 

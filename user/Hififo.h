@@ -21,14 +21,9 @@
 class Hififo {
 private:
 	int fd;
-	int32_t finfo = 0;
 	uint8_t *ringbuf;
 	size_t ringbuf_size;
 protected:
-	int p_in;
-	int p_out;
-	int p_req;
-	ssize_t ioc(void * buf, ssize_t count, int wait, int abort);
 public:
 	Hififo(const char * filename);
 	~Hififo();
@@ -37,6 +32,5 @@ public:
 	void * get_buffer(size_t count);
 	void put_buffer(size_t count);
 	void put_all();
-	ssize_t abort();
 	void set_timeout(double timeout);
 };
