@@ -110,7 +110,7 @@ static int hififo_release(struct inode *inode, struct file *filp)
 	//hififo_wait(fifo, fifo->n_requested);
 	if(fifo->ring != NULL)
 		pci_free_consistent(fifo->pdev,
-				    BUFFER_SIZE,
+				    fifo->ring_size,
 				    fifo->ring,
 				    fifo->ring_dma_addr);
 	fifo->ring = NULL;
@@ -182,6 +182,8 @@ static ssize_t hififo_get_buffer_read(struct hififo_fifo *fifo, size_t count)
 	rc = wait_event_interruptible_timeout(fifo->queue,
 					      hififo_ready_read(fifo, count),
 					      fifo->timeout);
+	if( rc > 2 )
+		return (ssize_t) fifo->p_sw;
 	printk(KERN_INFO DEVICE_NAME " %d: read wait, %d jiffies remain\n",
 	       fifo->n,
 	       rc);
@@ -325,16 +327,16 @@ static int hififo_mmap(struct file *file, struct vm_area_struct *vma)
 	if (vma->vm_start & ~PAGE_MASK)
 		return -EINVAL;
 	size = vma->vm_end - vma->vm_start;
-	if (size != 2 * BUFFER_SIZE)
+	if (size != 2 * fifo->ring_size)
 		return -EINVAL;
 	if(fifo->ring == NULL)
 		return -EINVAL;
 
 	for(i=0; i<2; i++){
 		rc = remap_pfn_range(vma,
-				     vma->vm_start + BUFFER_SIZE * i,
+				     vma->vm_start + fifo->ring_size * i,
 				     fifo->ring_dma_addr >> PAGE_SHIFT,
-				     BUFFER_SIZE,
+				     fifo->ring_size,
 				     vma->vm_page_prot);
 		if(rc)
 			return rc;
