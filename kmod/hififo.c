@@ -102,6 +102,12 @@ static inline void hififo_set_match(struct hififo_fifo *fifo, u32 matchval)
 	wmb();
 }
 
+static void hififo_set_timeout(struct hififo_fifo *fifo, unsigned long timeout)
+{
+	/* 1 extra jiffy so we round up rather than down */
+	fifo->timeout = 1 + (timeout * HZ) / 1000;
+}
+
 static int hififo_release(struct inode *inode, struct file *filp)
 {
 	struct hififo_fifo *fifo = filp->private_data;
@@ -209,6 +215,10 @@ hififo_ioctl_read (struct file *file, unsigned int command, unsigned long arg)
 		hififo_put_buffer_read(fifo, (size_t) arg);
 		return 0;
 	}
+	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_TIMEOUT)){
+		hififo_set_timeout(fifo, arg);
+		return 0;
+	}
 	return -ENOTTY;
 }
 
@@ -289,6 +299,10 @@ hififo_ioctl_write (struct file *file, unsigned int command, unsigned long arg)
 		return (long) hififo_get_buffer_write(fifo, (size_t) arg);
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_PUT)){
 		hififo_put_buffer_write(fifo, (size_t) arg);
+		return 0;
+	}
+	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_TIMEOUT)){
+		hififo_set_timeout(fifo, arg);
 		return 0;
 	}
 	return -ENOTTY;
