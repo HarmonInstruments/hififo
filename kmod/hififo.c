@@ -130,16 +130,12 @@ static int hififo_open(struct inode *inode, struct file *filp)
 	if (!spin_trylock(&fifo->lock_open))
 		return -EBUSY;
 	filp->private_data = fifo;
-	printk(KERN_INFO "hififo %d: open\n", fifo->n);
+	printk(KERN_INFO DEVICE_NAME " %d: open\n", fifo->n);
 	fifo->ring_size = BUFFER_SIZE;
 	fifo->ring = pci_alloc_consistent
 		(fifo->pdev,
 		 fifo->ring_size,
 		 &fifo->ring_dma_addr);
-	if(fifo->ring_dma_addr & 0xFFFFFFFF00000000)
-		printk("64 bit\n");
-	else
-		printk("32 bit\n");
 	if(fifo->ring == NULL)
 		goto fail;
 	writeqle(HIFIFO_ABORT(1), fifo->local_base);
@@ -241,9 +237,6 @@ static bool hififo_ready_write(struct hififo_fifo *fifo, int count)
 	fifo->p_hw = readlle(fifo->local_base);
 	bytes_in_ring = ring_mask & (fifo->p_sw - fifo->p_hw);
 	fifo->bytes_available = fifo->ring_size - (bytes_in_ring + 512);
-	printk(KERN_INFO "hififo %d: write check, %d bytes available\n",
-	       fifo->n,
-	       (int) fifo->bytes_available);
 	return (fifo->bytes_available >= count);
 }
 
@@ -259,7 +252,9 @@ static ssize_t hififo_get_buffer_write(struct hififo_fifo *fifo, size_t count)
 	rc = wait_event_interruptible_timeout(fifo->queue,
 					      hififo_ready_write(fifo, count),
 					      fifo->timeout);
-	printk(KERN_INFO "hififo %d: write wait, %d jiffies remain\n",
+	if( rc > 2 )
+		return (ssize_t) fifo->p_sw;
+	printk(KERN_INFO DEVICE_NAME " %d: write wait, %d jiffies remain\n",
 	       fifo->n,
 	       rc);
 	if( rc > 0 )
@@ -274,7 +269,6 @@ static void hififo_put_buffer_write(struct hififo_fifo *fifo, size_t count)
 	writeqle(HIFIFO_STOP(fifo->p_sw), fifo->local_base);
 	fifo->bytes_available -= count;
 	wmb();
-	printk("hififo %d: set stop to %d\n", fifo->n, (int) fifo->p_sw);
 }
 
 static long
@@ -301,15 +295,11 @@ static ssize_t hififo_write(struct file *filp, const char *buf, size_t length,
 	while(bytes_copied < length){
 		csize = hififo_min(max_copy, length - bytes_copied);
 		csize = hififo_min(csize, fifo->ring_size - fifo->p_sw);
-		printk("csize = %d\n", (int) csize);
-		printk("p_sw = %.8x\n", (int) fifo->p_sw);
 		if(hififo_get_buffer_write(fifo, csize) < 0)
 			break;
-		printk("blah\n");
 		if(copy_from_user
 		   (fifo->ring + fifo->p_sw, &buf[bytes_copied], csize) != 0)
 			break;
-		printk("done\n");
 		hififo_put_buffer_write(fifo, csize);
 		bytes_copied += csize;
 	}
@@ -366,7 +356,7 @@ hififo_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	struct hififo_dev *drvdata = dev_id;
 	u32 sr = readreg(drvdata, REG_INTERRUPT);
 	int i;
-	printk(KERN_INFO DEVICE_NAME " interrupt: sr = %x\n", sr);
+	//printk(KERN_INFO DEVICE_NAME " interrupt: sr = %x\n", sr);
 	for(i=0; i<MAX_FIFOS; i++){
 		if(!(sr & (1<<i)))
 			continue;
@@ -510,8 +500,6 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	hififo_count++;
 	/* enable interrupts */
 	writereg(drvdata, 0xFFFF, REG_INTERRUPT);
-	for(i=0; i<32; i++)
-		printk("bar0[%d] = %.8x\n", i, readreg(drvdata, i));
 	return 0;
 }
 
@@ -535,11 +523,10 @@ static struct pci_driver hififo_driver = {
 };
 
 static int __init hififo_init(void){
-	printk ("Loading hififo kernel module\n");
 	hififo_count = 0;
 	hififo_class = class_create(THIS_MODULE, "hififo");
 	if (IS_ERR(hififo_class)) {
-		printk(KERN_ERR "Error creating hififo class.\n");
+		printk(KERN_ERR DEVICE_NAME "Error creating class.\n");
 		//goto error;
 	}
 	return pci_register_driver(&hififo_driver);
@@ -548,7 +535,6 @@ static int __init hififo_init(void){
 static void __exit hififo_exit(void){
 	pci_unregister_driver(&hififo_driver);
 	class_destroy(hififo_class);
-	printk ("Unloading hififo kernel module.\n");
 	return;
 }
 
