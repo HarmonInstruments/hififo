@@ -76,15 +76,13 @@ static int hififo_count; /* track the number of cards found */
 struct hififo_fifo {
 	dma_addr_t ring_dma_addr;
 	u64 *ring;
-	u32 ring_size; // size of ring
-	u32 ring_capacity; // capacity of ring
-	u32 ring_mask;
 	u64 *local_base;
 	struct pci_dev *pdev;
 	struct cdev cdev;
 	u32 p_hw, p_sw;
+	u32 ring_size; // size of ring
+	u32 bytes_available;
 	wait_queue_head_t queue;
-	s32 bytes_requested;
 	spinlock_t lock_open;
 	int n; /* fifo number */
 	int timeout;
@@ -97,6 +95,12 @@ struct hififo_dev {
 	int nfifos;
 	int idreg;
 };
+
+static inline void hififo_set_match(struct hififo_fifo *fifo, u32 matchval)
+{
+	writeqle(HIFIFO_MATCH(matchval), fifo->local_base);
+	wmb();
+}
 
 static int hififo_release(struct inode *inode, struct file *filp)
 {
@@ -128,23 +132,30 @@ static int hififo_open(struct inode *inode, struct file *filp)
 	filp->private_data = fifo;
 	printk(KERN_INFO "hififo %d: open\n", fifo->n);
 	fifo->ring_size = BUFFER_SIZE;
-	fifo->ring_capacity = BUFFER_SIZE - 512;
-	fifo->ring_mask = BUFFER_SIZE - 1;
 	fifo->ring = pci_alloc_consistent
 		(fifo->pdev,
 		 fifo->ring_size,
 		 &fifo->ring_dma_addr);
+	if(fifo->ring_dma_addr & 0xFFFFFFFF00000000)
+		printk("64 bit\n");
+	else
+		printk("32 bit\n");
 	if(fifo->ring == NULL)
 		goto fail;
+	writeqle(HIFIFO_ABORT(1), fifo->local_base);
+	udelay(100);
 	fifo->timeout = HZ/4;
-	fifo->p_hw = readlle(fifo->local_base) & 0xFFFFFFF8;
-	printk("p_hw at open = %d\n", (int) fifo->p_hw);
-	fifo->p_sw = fifo->p_hw;
+	fifo->p_hw = 0;
+	fifo->p_sw = 0;
+	fifo->bytes_available = 0;
 	writeqle(HIFIFO_ADDR(fifo->ring_dma_addr), fifo->local_base);
+	wmb();
 	/* clear the abort bit on this FIFO in hardware */
 	writeqle(HIFIFO_ABORT(0), fifo->local_base);
+	udelay(100);
 	return 0;
 fail:
+	printk(KERN_ERR DEVICE_NAME " %d failed to allocate buffer", fifo->n);
 	hififo_release(inode, filp);
 	return -ENOMEM;
 }
@@ -155,30 +166,13 @@ static ssize_t hififo_read(struct file *filp,
 			   loff_t * offset)
 {
 	struct hififo_fifo *fifo = filp->private_data;
-	s32 bytes_requested_initial = fifo->bytes_requested;
 	printk("hififo %d: read, %x bytes, addr = 0x%p\n",
 	       fifo->n, (int) length, buf);
 	if((buf == NULL) || (length == 0))
 		return -EINVAL;
 	//hififo_queue_request(fifo, buf, length);
 	//hififo_wait(fifo, fifo->n_requested);
-	return fifo->bytes_requested - bytes_requested_initial;
-}
-
-static ssize_t hififo_write(struct file *filp,
-			    const char *buf,
-			    size_t length,
-			    loff_t * off)
-{
-	struct hififo_fifo *fifo = filp->private_data;
-	s32 bytes_requested_initial = fifo->bytes_requested;
-	printk(KERN_INFO DEVICE_NAME " %d: write, %x bytes, addr = 0x%p\n",
-	       fifo->n, (int) length, buf);
-	if((buf == NULL) || (length == 0))
-		return -EINVAL;
-	//hififo_queue_request(fifo, (void *) buf, length);
-	//hififo_wait(fifo, fifo->n_requested);
-	return fifo->bytes_requested - bytes_requested_initial;
+	return 0;
 }
 
 /* Returns 1 if the FIFO contains at least count bytes, 0 otherwise */
@@ -204,7 +198,7 @@ static bool hififo_ready_read(struct hififo_fifo *fifo, int count)
 static ssize_t hififo_get_buffer_read(struct hififo_fifo *fifo, size_t count)
 {
 	int rc;
-	writeqle(HIFIFO_STOP(fifo->p_sw + fifo->ring_capacity),
+	writeqle(HIFIFO_STOP(fifo->p_sw + fifo->ring_size - 512),
 		 fifo->local_base);
 	writeqle(HIFIFO_MATCH(fifo->p_sw + count), fifo->local_base);
 	rc = wait_event_interruptible_timeout(fifo->queue,
@@ -237,26 +231,20 @@ hififo_ioctl_read (struct file *file, unsigned int command, unsigned long arg)
 	return -ENOTTY;
 }
 
-static inline void hififo_set_match(struct hififo_fifo *fifo, u32 matchval)
-{
-	writeqle(HIFIFO_MATCH(matchval), fifo->local_base);
-}
-
 /* Returns 1 if the FIFO contains at least count bytes, 0 otherwise */
 static bool hififo_ready_write(struct hififo_fifo *fifo, int count)
  {
 	u32 ring_mask = fifo->ring_size - 1;
-	u32 bytes_in_ring = ring_mask & (fifo->p_sw - fifo->p_hw);
-	u32 bytes_available = fifo->ring_size - (bytes_in_ring + 512);
-	if(bytes_available < count){
-		fifo->p_hw = readlle(fifo->local_base);
-		bytes_in_ring = ring_mask & (fifo->p_sw - fifo->p_hw);
-		bytes_available = fifo->ring_size - (bytes_in_ring + 512);
-	}
+	u32 bytes_in_ring;
+	if(fifo->bytes_available >= count)
+		return 1;
+	fifo->p_hw = readlle(fifo->local_base);
+	bytes_in_ring = ring_mask & (fifo->p_sw - fifo->p_hw);
+	fifo->bytes_available = fifo->ring_size - (bytes_in_ring + 512);
 	printk(KERN_INFO "hififo %d: write check, %d bytes available\n",
 	       fifo->n,
-	       (int) bytes_available);
-	return (bytes_available >= count);
+	       (int) fifo->bytes_available);
+	return (fifo->bytes_available >= count);
 }
 
 /* Waits until the FIFO contains least count bytes
@@ -282,8 +270,11 @@ static ssize_t hififo_get_buffer_write(struct hififo_fifo *fifo, size_t count)
 static void hififo_put_buffer_write(struct hififo_fifo *fifo, size_t count)
 {
 	fifo->p_sw += count;
-	fifo->p_sw &= (fifo->ring_size - 1);
+	fifo->p_sw &= (fifo->ring_size - 7);
 	writeqle(HIFIFO_STOP(fifo->p_sw), fifo->local_base);
+	fifo->bytes_available -= count;
+	wmb();
+	printk("hififo %d: set stop to %d\n", fifo->n, (int) fifo->p_sw);
 }
 
 static long
@@ -297,6 +288,32 @@ hififo_ioctl_write (struct file *file, unsigned int command, unsigned long arg)
 		return 0;
 	}
 	return -ENOTTY;
+}
+
+static ssize_t hififo_write(struct file *filp, const char *buf, size_t length,
+			    loff_t * off)
+{
+	struct hififo_fifo *fifo = filp->private_data;
+	size_t bytes_copied = 0, csize;
+	size_t max_copy = fifo->ring_size / 2;
+	if((buf == NULL) || ((length & 0x7) != 0))
+		return -EINVAL;
+	while(bytes_copied < length){
+		csize = hififo_min(max_copy, length - bytes_copied);
+		csize = hififo_min(csize, fifo->ring_size - fifo->p_sw);
+		printk("csize = %d\n", (int) csize);
+		printk("p_sw = %.8x\n", (int) fifo->p_sw);
+		if(hififo_get_buffer_write(fifo, csize) < 0)
+			break;
+		printk("blah\n");
+		if(copy_from_user
+		   (fifo->ring + fifo->p_sw, &buf[bytes_copied], csize) != 0)
+			break;
+		printk("done\n");
+		hififo_put_buffer_write(fifo, csize);
+		bytes_copied += csize;
+	}
+	return bytes_copied;
 }
 
 static int hififo_mmap(struct file *file, struct vm_area_struct *vma)
@@ -489,7 +506,6 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		fifo->pdev = pdev;
 		fifo->local_base = drvdata->pio_reg_base+8+i;
 		init_waitqueue_head(&fifo->queue);
-		fifo->bytes_requested = 0;
 	}
 	hififo_count++;
 	/* enable interrupts */
