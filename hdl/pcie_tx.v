@@ -312,10 +312,10 @@ module rr_mux
    output [7:0]  rro_tag
    );
 
-   wire [6:0] 	 rro_tag_raw;
-   assign rro_tag = {rro_tag_raw[6:3], 1'b0, rro_tag_raw[2:0]};
+   wire [4:0] 	 rro_tag_raw;
+   assign rro_tag = {2'b0, rro_tag_raw[4:3], 1'b0, rro_tag_raw[2:0]};
 
-   rr_mux4 #(.TAG(6), .AMIN(9)) rr_mux4_0
+   rr_mux4 #(.TAG(5), .AMIN(9)) rr_mux4_0
      (.clock(clock),
       .reset(reset),
       .rri_valid(rri_valid[3:0]),
@@ -324,10 +324,10 @@ module rr_mux
       .rri_addr_1(rri_addr_1),
       .rri_addr_2(rri_addr_2),
       .rri_addr_3(rri_addr_3),
-      .rri_tag_0({3'd0,rri_tag_0}),
-      .rri_tag_1({3'd1,rri_tag_1}),
-      .rri_tag_2({3'd2,rri_tag_2}),
-      .rri_tag_3({3'd3,rri_tag_3}),
+      .rri_tag_0({2'd0,rri_tag_0}),
+      .rri_tag_1({2'd1,rri_tag_1}),
+      .rri_tag_2({2'd2,rri_tag_2}),
+      .rri_tag_3({2'd3,rri_tag_3}),
       .rro_valid(rro_valid),
       .rro_ready(rro_ready),
       .rro_addr(rro_addr),
