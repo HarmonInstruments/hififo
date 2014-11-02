@@ -156,34 +156,15 @@ fail:
 	return -ENOMEM;
 }
 
-static ssize_t hififo_read(struct file *filp,
-			   char *buf,
-			   size_t length,
-			   loff_t * offset)
-{
-	struct hififo_fifo *fifo = filp->private_data;
-	printk("hififo %d: read, %x bytes, addr = 0x%p\n",
-	       fifo->n, (int) length, buf);
-	if((buf == NULL) || (length == 0))
-		return -EINVAL;
-	//hififo_queue_request(fifo, buf, length);
-	//hififo_wait(fifo, fifo->n_requested);
-	return 0;
-}
-
 /* Returns 1 if the FIFO contains at least count bytes, 0 otherwise */
 static bool hififo_ready_read(struct hififo_fifo *fifo, int count)
 {
 	u32 ring_mask = fifo->ring_size - 1;
-	u32 bytes_in_ring = ring_mask & (fifo->p_hw - fifo->p_sw);
-	if(bytes_in_ring < count){
-		fifo->p_hw = readlle(fifo->local_base);
-		bytes_in_ring = ring_mask & (fifo->p_hw - fifo->p_sw);
-	}
-	printk(KERN_INFO "hififo %d: read check, %d bytes available in ring\n",
-	       fifo->n,
-	       (int) bytes_in_ring);
-	return (bytes_in_ring >= count);
+	if(fifo->bytes_available >= count)
+		return 1;
+	fifo->p_hw = readlle(fifo->local_base);
+	fifo->bytes_available = ring_mask & (fifo->p_hw - fifo->p_sw);
+	return (fifo->bytes_available >= count);
 }
 
 /* Waits until the FIFO contains least count bytes
@@ -197,10 +178,11 @@ static ssize_t hififo_get_buffer_read(struct hififo_fifo *fifo, size_t count)
 	writeqle(HIFIFO_STOP(fifo->p_sw + fifo->ring_size - 512),
 		 fifo->local_base);
 	writeqle(HIFIFO_MATCH(fifo->p_sw + count), fifo->local_base);
+	wmb();
 	rc = wait_event_interruptible_timeout(fifo->queue,
 					      hififo_ready_read(fifo, count),
 					      fifo->timeout);
-	printk(KERN_INFO "hififo %d: read wait, %d jiffies remain\n",
+	printk(KERN_INFO DEVICE_NAME " %d: read wait, %d jiffies remain\n",
 	       fifo->n,
 	       rc);
 	if( rc > 0 )
@@ -212,6 +194,7 @@ static void hififo_put_buffer_read(struct hififo_fifo *fifo, size_t count)
 {
 	fifo->p_sw += count;
 	fifo->p_sw &= (fifo->ring_size - 1);
+	fifo->bytes_available -= count;
 }
 
 static long
@@ -225,6 +208,31 @@ hififo_ioctl_read (struct file *file, unsigned int command, unsigned long arg)
 		return 0;
 	}
 	return -ENOTTY;
+}
+
+static ssize_t hififo_read(struct file *filp,
+			   char *buf,
+			   size_t length,
+			   loff_t * offset)
+{
+	struct hififo_fifo *fifo = filp->private_data;
+	size_t max_copy = fifo->ring_size / 2;
+	size_t bytes_copied = 0;
+	size_t csize;
+	if((buf == NULL) || ((length & 0x7) != 0))
+		return -EINVAL;
+	while(bytes_copied < length){
+		csize = hififo_min(max_copy, length - bytes_copied);
+		csize = hififo_min(csize, fifo->ring_size - fifo->p_sw);
+		if(hififo_get_buffer_read(fifo, csize) < 0)
+			break;
+		if(copy_to_user
+		   (&buf[bytes_copied], fifo->ring + fifo->p_sw, csize) != 0)
+			break;
+		hififo_put_buffer_read(fifo, csize);
+		bytes_copied += csize;
+	}
+	return bytes_copied;
 }
 
 /* Returns 1 if the FIFO contains at least count bytes, 0 otherwise */
