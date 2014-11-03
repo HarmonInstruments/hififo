@@ -33,7 +33,6 @@ module hififo_tpc_fifo
    output [63:0] wr_data,
    output [63:0] wr_addr,
    output reg 	 wr_last,
-   output [4:0]  wr_count,
    // FIFO
    input 	 fifo_clock,
    input 	 fifo_write,
@@ -47,8 +46,6 @@ module hififo_tpc_fifo
    wire 	 request_valid;
    wire 	 fifo_read = (wr_ready && wr_valid)
 		 || ((state != 0) && (state < 30));
-
-   assign wr_count = 16;
 
    always @ (posedge clock)
      begin

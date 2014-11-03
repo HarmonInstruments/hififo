@@ -87,7 +87,6 @@ module hififo_pcie
    wire [3:0] 	 mux_wr_valid, mux_wr_ready;
    wire [63:0] 	 mux_wr_data[0:3];
    wire [63:0] 	 mux_wr_addr[0:3];
-   wire [4:0] 	 mux_wr_count[0:3];
    wire [3:0] 	 mux_wr_last;
 
    wire [31:0] 	 status[0:7];
@@ -214,7 +213,6 @@ module hififo_pcie
 		 .wr_ready(mux_wr_ready[i-4]),
 		 .wr_data(mux_wr_data[i-4]),
 		 .wr_addr(mux_wr_addr[i-4]),
-		 .wr_count(mux_wr_count[i-4]),
 		 .wr_last(mux_wr_last[i-4]),
 		 // user FIFO
 		 .fifo_clock(fifo_clock[i]),
@@ -227,7 +225,6 @@ module hififo_pcie
 	   begin
 	      assign mux_wr_last[i-4] = 0;
 	      assign mux_wr_data[i-4] = 0;
-	      assign mux_wr_count[i-4] = 0;
 	      assign mux_wr_addr[i-4] = 0;
 	      assign mux_wr_valid[i-4] = 0;
 	   end
@@ -315,7 +312,6 @@ module hififo_pcie
    wire  	 tx_wr_valid, tx_wr_ready, tx_wr_last;
    wire [63:0] 	 tx_wr_data;
    wire [63:0] 	 tx_wr_addr;
-   wire [4:0] 	 tx_wr_count;
 
    wr_mux wr_mux
      (.clock(clock),
@@ -335,8 +331,7 @@ module hififo_pcie
       .wro_ready(tx_wr_ready),
       .wro_addr(tx_wr_addr),
       .wro_data(tx_wr_data),
-      .wro_last(tx_wr_last),
-      .wro_count(tx_wr_count)
+      .wro_last(tx_wr_last)
      );
 
    pcie_tx tx
@@ -358,7 +353,6 @@ module hififo_pcie
       .wr_ready(tx_wr_ready),
       .wr_data(tx_wr_data),
       .wr_addr(tx_wr_addr),
-      .wr_count(tx_wr_count),
       .wr_last(tx_wr_last),
       // AXI stream to PCI Express core
       .tx_tready(s_axis_tx_tready),

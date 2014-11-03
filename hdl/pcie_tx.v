@@ -35,10 +35,9 @@ module pcie_tx
    input [7:0] 	 rr_tag,
    // write request (wr)
    input 	 wr_valid,
-   output  	 wr_ready, // pulses wr_count times in request of the next data value
+   output  	 wr_ready, // pulses 16 times in request of the next data value
    input [63:0]  wr_data,
    input [63:0]  wr_addr,
-   input [4:0] 	 wr_count,
    input 	 wr_last,
    // AXI stream to PCI Express core
    input 	 tx_tready,
@@ -103,7 +102,7 @@ module pcie_tx
 	  5: begin
 	     wr_is_32 <= wr_addr[63:32] == 0;
 	     fi_data <= {2'b00, pci_id, 16'h00FF, 2'b01, wr_addr[63:32] != 0,
-			 23'd0, wr_count, 1'b0};
+			 23'd0, 5'd16, 1'b0};
 	  end
 	  6: begin
 	     fi_data <= {2'b00, wr_is_32 ?
@@ -223,7 +222,6 @@ module wr_mux
    input 	     wro_ready,
    output [63:0]     wro_addr,
    output reg [63:0] wro_data,
-   output [4:0]      wro_count,
    output reg 	     wro_last
    );
 
@@ -231,7 +229,6 @@ module wr_mux
    reg [60:0] 	     wro_addr_s = 0;
 
    assign wro_addr = {wro_addr_s, 3'd0};
-   assign wro_count = 16;
    assign wri_ready[0] = (state == 1) && wro_ready;
    assign wri_ready[1] = (state == 5) && wro_ready;
    assign wri_ready[2] = (state == 9) && wro_ready;
