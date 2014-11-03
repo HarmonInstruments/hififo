@@ -32,26 +32,26 @@ using namespace std;
 
 SPI_Config::SPI_Config(Sequencer *sequencer, int addr)
 {
-  seq = sequencer;
-  spi_address = addr;
-  cerr << "opened SPI_Config, addr = " << addr << "\n";
+	seq = sequencer;
+	spi_address = addr;
+	cerr << "opened SPI_Config, addr = " << addr << "\n";
 }
 
 void SPI_Config::txrx(char * data, int len, int read_offset)
 {
-  for(int i=0; i<len; i++){
-    uint64_t d_next = 0xFF & data[i];
-    if(len != i+1)
-      d_next |= 0x100;
-    seq->write_single(spi_address, d_next);
-    seq->wait(128);
-    if((read_offset >= 0) && (i >= read_offset))
-      seq->read_req(1, spi_address);
-  }
-  if(read_offset < 0)
-    return;
-  uint64_t * rdata64 = seq->run();
-  for(int i=0; i<(len-read_offset); i++)
-    data[i] = rdata64[i];
+	for(int i=0; i<len; i++) {
+		uint64_t d_next = 0xFF & data[i];
+		if(len != i+1)
+			d_next |= 0x100;
+		seq->write_single(spi_address, d_next);
+		seq->wait(128);
+		if((read_offset >= 0) && (i >= read_offset))
+			seq->read_req(1, spi_address);
+	}
+	if(read_offset < 0)
+		return;
+	uint64_t * rdata64 = seq->run();
+	for(int i=0; i<(len-read_offset); i++)
+		data[i] = rdata64[i];
 }
 
