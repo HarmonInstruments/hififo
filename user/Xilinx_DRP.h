@@ -21,11 +21,11 @@
 #include "Sequencer.h"
 
 class Xilinx_DRP {
- private:
-  Sequencer *seq;
-  int drp_address;
- public:
-  Xilinx_DRP(Sequencer *sequencer, int addr);
-  void write(int addr, int data);
-  int read(int addr);
+private:
+	Sequencer *seq;
+	int drp_address;
+public:
+	Xilinx_DRP(Sequencer *sequencer, int addr);
+	void write(int addr, int data);
+	int read(int addr);
 };

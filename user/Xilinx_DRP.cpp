@@ -31,23 +31,23 @@ using namespace std;
 
 Xilinx_DRP::Xilinx_DRP(Sequencer *sequencer, int addr)
 {
-  seq = sequencer;
-  drp_address = addr;
-  cerr << "opened Xilinx_DRP, addr = " << addr << "\n";
+	seq = sequencer;
+	drp_address = addr;
+	cerr << "opened Xilinx_DRP, addr = " << addr << "\n";
 }
 
 void Xilinx_DRP::write(int addr, int data)
 {
-  seq->write_single(drp_address, data | (addr << 16) | (1<<31));
-  seq->wait(1000);
-  seq->run();
+	seq->write_single(drp_address, data | (addr << 16) | (1<<31));
+	seq->wait(1000);
+	seq->run();
 }
 
 int Xilinx_DRP::read(int addr)
 {
-  seq->write_single(drp_address, addr << 16);
-  seq->wait(1000);
-  seq->read_req(1, drp_address);
-  uint64_t * rdata = seq->run();
-  return rdata[0];
+	seq->write_single(drp_address, addr << 16);
+	seq->wait(1000);
+	seq->read_req(1, drp_address);
+	uint64_t * rdata = seq->run();
+	return rdata[0];
 }
