@@ -8,12 +8,13 @@ create_ip -name pcie_7x -vendor xilinx.com -library ip -module_name pcie_7x_0
 set_property -dict [list \
 			CONFIG.Maximum_Link_Width {X4} \
 			CONFIG.Link_Speed {5.0_GT/s} \
+			CONFIG.Perf_Level {Good} \
 			CONFIG.Use_Class_Code_Lookup_Assistant {true} \
 			CONFIG.Base_Class_Menu \
 			{Data_acquisition_and_signal_processing_controllers} \
 			CONFIG.Sub_Class_Interface_Menu \
 			{Other_data_acquisition/signal_processing_controllers} \
-			CONFIG.Max_Payload_Size {128_bytes} \
+			CONFIG.Max_Payload_Size {256_bytes} \
 			CONFIG.Buf_Opt_BMA {true} \
 			CONFIG.IntX_Generation {false} \
 			CONFIG.DSN_Enabled {false} \

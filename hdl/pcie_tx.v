@@ -127,7 +127,7 @@ module pcie_tx
 	rc_ready <= (state == 1);
      end
 
-   fwft_fifo #(.NBITS(66)) tx_fifo
+   fwft_fifo #(.NBITS(66), .FULL_OFFSET(9'h1C0)) tx_fifo
      (
       .reset(reset),
       .i_clock(clock),

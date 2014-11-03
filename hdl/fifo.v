@@ -37,6 +37,7 @@ module fwft_fifo
    );
 
    parameter NBITS = 64; // 1 to 72 valid
+   parameter FULL_OFFSET = 9'h080;
 
 `ifdef SIM
    // this is for simulation only!!!
@@ -82,7 +83,7 @@ module fwft_fifo
 	 FIFO_DUALCLOCK_MACRO
 	   #(
 	     .ALMOST_EMPTY_OFFSET(9'h00F),
-	     .ALMOST_FULL_OFFSET(9'h080),
+	     .ALMOST_FULL_OFFSET(FULL_OFFSET),
 	     .DATA_WIDTH(NBITS),
 	     .DEVICE("7SERIES"),
 	     .FIFO_SIZE ("36Kb"),
@@ -111,7 +112,7 @@ module fwft_fifo
 	 FIFO_DUALCLOCK_MACRO
 	   #(
 	     .ALMOST_EMPTY_OFFSET(9'h00F),
-	     .ALMOST_FULL_OFFSET(9'h080),
+	     .ALMOST_FULL_OFFSET(FULL_OFFSET),
 	     .DATA_WIDTH(NBITS),
 	     .DEVICE("7SERIES"),
 	     .FIFO_SIZE ("18Kb"),
