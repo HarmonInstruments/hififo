@@ -72,5 +72,5 @@ module sync_pulse (input clock_in, input clock_out, input in, output out);
    wire stretched;
    pulse_stretch #(.NB(NB)) stretch
      (.clock(clock_in), .in(in), .out(stretched));
-   sync_oneshot(.clock(clock_out), .in(stretched), .out(out));
+   sync_oneshot sync_ons (.clock(clock_out), .in(stretched), .out(out));
 endmodule
