@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -16,15 +16,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
-#ifndef TIMEIT_H
-#define TIMEIT_H
+#pragma once
 
 class TimeIt {
- private:
-  struct timespec start_time;
- public:
-  TimeIt(void);
-  double elapsed(void);
+private:
+	struct timespec _start_time;
+public:
+	TimeIt(void);
+	double elapsed(void);
 };
 
-#endif

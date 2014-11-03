@@ -1,4 +1,4 @@
-/* 
+/*
  * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -22,11 +22,12 @@
 using namespace std;
 
 TimeIt::TimeIt(void){
-  clock_gettime(CLOCK_REALTIME, &start_time);
+	clock_gettime(CLOCK_REALTIME, &_start_time);
 }
 
 double TimeIt::elapsed(){
-  struct timespec stop_time;
-  clock_gettime(CLOCK_REALTIME, &stop_time);
-  return (stop_time.tv_sec - start_time.tv_sec) + 1e-9 * (stop_time.tv_nsec - start_time.tv_nsec);  
+	struct timespec stop_time;
+	clock_gettime(CLOCK_REALTIME, &stop_time);
+	return (stop_time.tv_sec - _start_time.tv_sec) +
+		1e-9 * (stop_time.tv_nsec - _start_time.tv_nsec);
 };
