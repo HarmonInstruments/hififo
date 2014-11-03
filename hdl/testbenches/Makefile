@@ -17,7 +17,7 @@ export VERILOG_SOURCES = $(PWD)/../hififo.v \
 export TOPLEVEL = vna_dsp
 export COCOTB=/home/dlharmon/software/cocotb
 export MODULE=test
-export COMPILE_ARGS=-D SIM
+export COMPILE_ARGS=-D SIM -I../../
 
 test:
 	make -C coco

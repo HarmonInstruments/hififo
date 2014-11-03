@@ -16,8 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
-`define USE_GT_DRP
-`define NLANES 4
+`include "config.vh"
 
 module vna_dsp
   (
@@ -60,6 +59,7 @@ module vna_dsp
    wire [`NLANES-1:0] 	gt_drp_en, gt_drp_ready, gt_drp_we;
    wire [16*`NLANES-1:0] gt_drp_di, gt_drp_do;
    wire 		 gt_drp_clock;
+   wire [16:0] 		 seq_gtdrpdata[`NLANES-1:0];
 `endif
 
    wire 	    seq_rvalid, seq_wvalid;
@@ -69,9 +69,8 @@ module vna_dsp
    reg [63:0] 	    seq_test;
    wire [7:0] 	    seq_spidata;
    wire [16:0] 	    seq_xadcdata;
-   wire [16:0] 	    seq_gtdrpdata[`NLANES-1:0];
 
-   hififo_pcie #(.ENABLE(8'b01110111), .NLANES(`NLANES)) hififo
+   hififo_pcie hififo
      (.pci_exp_txp(pcie_txp),
       .pci_exp_txn(pcie_txn),
       .pci_exp_rxp(pcie_rxp),
@@ -80,7 +79,7 @@ module vna_dsp
       .sys_clk_n(pcie_refclk_n),
       .sys_rst_n(pcie_rst_n),
       .clock(clock),
-      `ifdef USE_GT_DRP
+`ifdef USE_GT_DRP
       .gt_drp_address(gt_drp_address),
       .gt_drp_en(gt_drp_en),
       .gt_drp_di(gt_drp_di),
@@ -88,7 +87,7 @@ module vna_dsp
       .gt_drp_ready(gt_drp_ready),
       .gt_drp_we(gt_drp_we),
       .gt_drp_clock(gt_drp_clock),
-      `endif
+`endif
       .fifo_clock({8{clock}}),
       .fifo_reset(fifo_reset),
       .fifo_ready(fifo_ready),
@@ -202,10 +201,12 @@ module vna_dsp
 	    3: seq_rdata0 <= 64'd3;
 	    4: seq_rdata0 <= seq_spidata;
 	    5: seq_rdata0 <= seq_xadcdata;
+   `ifdef USE_GT_DRP
 	    8: seq_rdata0 <= seq_gtdrpdata[0];
 	    9: seq_rdata0 <= seq_gtdrpdata[1];
 	    10: seq_rdata0 <= seq_gtdrpdata[2];
 	    11: seq_rdata0 <= seq_gtdrpdata[3];
+   `endif
 	    default: seq_rdata0 <= seq_address;
 	  endcase
 

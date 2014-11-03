@@ -16,45 +16,44 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
+`include "config.vh"
 `ifndef SIM
 
 module pcie_core_wrap
   (
    // IO pins
-   output [NLANES-1:0] 	  pci_exp_txp,
-   output [NLANES-1:0] 	  pci_exp_txn,
-   input [NLANES-1:0] 	  pci_exp_rxp,
-   input [NLANES-1:0] 	  pci_exp_rxn,
-   input 		  sys_clk_p,
-   input 		  sys_clk_n,
-   input 		  sys_rst_n,
+   output [`NLANES-1:0]    pci_exp_txp,
+   output [`NLANES-1:0]    pci_exp_txn,
+   input [`NLANES-1:0] 	   pci_exp_rxp,
+   input [`NLANES-1:0] 	   pci_exp_rxn,
+   input 		   sys_clk_p,
+   input 		   sys_clk_n,
+   input 		   sys_rst_n,
    //
-   output [15:0] 	  pci_id,
-   input 		  interrupt,
-   output 		  interrupt_rdy,
-   output reg 		  pci_reset = 1,
-   output 		  clock,
+   output [15:0] 	   pci_id,
+   input 		   interrupt,
+   output 		   interrupt_rdy,
+   output reg 		   pci_reset = 1,
+   output 		   clock,
    // DRP
-   input [9*NLANES-1:0]   gt_drp_address,
-   input [NLANES-1:0] 	  gt_drp_en,
-   input [16*NLANES-1:0]  gt_drp_di,
-   output [16*NLANES-1:0] gt_drp_do,
-   output [NLANES-1:0] 	  gt_drp_ready,
-   input [NLANES-1:0] 	  gt_drp_we,
-   output		  gt_drp_clock,
+   input [9*`NLANES-1:0]   gt_drp_address,
+   input [`NLANES-1:0] 	   gt_drp_en,
+   input [16*`NLANES-1:0]  gt_drp_di,
+   output [16*`NLANES-1:0] gt_drp_do,
+   output [`NLANES-1:0]    gt_drp_ready,
+   input [`NLANES-1:0] 	   gt_drp_we,
+   output 		   gt_drp_clock,
    // AXI to core
-   output 		  s_axis_tx_tready,
-   input [63:0] 	  s_axis_tx_tdata,
-   input 		  s_axis_tx_1dw,
-   input 		  s_axis_tx_tlast,
-   input 		  s_axis_tx_tvalid,
+   output 		   s_axis_tx_tready,
+   input [63:0] 	   s_axis_tx_tdata,
+   input 		   s_axis_tx_1dw,
+   input 		   s_axis_tx_tlast,
+   input 		   s_axis_tx_tvalid,
    // AXI from core
-   output 		  m_axis_rx_tvalid,
-   output 		  m_axis_rx_tlast,
-   output [63:0] 	  m_axis_rx_tdata
+   output 		   m_axis_rx_tvalid,
+   output 		   m_axis_rx_tlast,
+   output [63:0] 	   m_axis_rx_tdata
    );
-
-   parameter NLANES = 4;
 
    wire 	user_reset;
    wire 	user_lnk_up;
@@ -235,39 +234,37 @@ endmodule
 module pcie_core_wrap
   (
    // IO pins
-   output [NLANES-1:0] 	  pci_exp_txp,
-   output [NLANES-1:0] 	  pci_exp_txn,
-   input [NLANES-1:0] 	  pci_exp_rxp,
-   input [NLANES-1:0] 	  pci_exp_rxn,
-   input 		  sys_clk_p,
-   input 		  sys_clk_n,
-   input 		  sys_rst_n,
-   output reg [15:0] 	  pci_id = 16'hDEAD,
-   input 		  interrupt,
-   output reg 		  interrupt_rdy = 0,
-   output reg 		  pci_reset = 0,
-   output reg 		  clock = 0,
+   output [`NLANES-1:0]    pci_exp_txp,
+   output [`NLANES-1:0]    pci_exp_txn,
+   input [`NLANES-1:0] 	   pci_exp_rxp,
+   input [`NLANES-1:0] 	   pci_exp_rxn,
+   input 		   sys_clk_p,
+   input 		   sys_clk_n,
+   input 		   sys_rst_n,
+   output reg [15:0] 	   pci_id = 16'hDEAD,
+   input 		   interrupt,
+   output reg 		   interrupt_rdy = 0,
+   output reg 		   pci_reset = 0,
+   output reg 		   clock = 0,
    // DRP
-   input [9*NLANES-1:0]   gt_drp_address,
-   input [NLANES-1:0] 	  gt_drp_en,
-   input [16*NLANES-1:0]  gt_drp_di,
-   output [16*NLANES-1:0] gt_drp_do,
-   output [NLANES-1:0] 	  gt_drp_ready,
-   input [NLANES-1:0] 	  gt_drp_we,
-   output 		  gt_drp_clock,
+   input [9*`NLANES-1:0]   gt_drp_address,
+   input [`NLANES-1:0] 	   gt_drp_en,
+   input [16*`NLANES-1:0]  gt_drp_di,
+   output [16*`NLANES-1:0] gt_drp_do,
+   output [`NLANES-1:0]    gt_drp_ready,
+   input [`NLANES-1:0] 	   gt_drp_we,
+   output 		   gt_drp_clock,
    // AXI to core
-   output reg 		  s_axis_tx_tready = 0,
-   input [63:0] 	  s_axis_tx_tdata,
-   input 		  s_axis_tx_1dw,
-   input 		  s_axis_tx_tlast,
-   input 		  s_axis_tx_tvalid,
+   output reg 		   s_axis_tx_tready = 0,
+   input [63:0] 	   s_axis_tx_tdata,
+   input 		   s_axis_tx_1dw,
+   input 		   s_axis_tx_tlast,
+   input 		   s_axis_tx_tvalid,
    // AXI from core
-   output reg 		  m_axis_rx_tvalid = 0,
-   output reg 		  m_axis_rx_tlast = 0,
-   output reg [63:0] 	  m_axis_rx_tdata = 0
+   output reg 		   m_axis_rx_tvalid = 0,
+   output reg 		   m_axis_rx_tlast = 0,
+   output reg [63:0] 	   m_axis_rx_tdata = 0
    );
-
-   parameter NLANES = 4;
 
    always @ (posedge clock)
      interrupt_rdy <= interrupt;

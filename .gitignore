@@ -14,3 +14,4 @@ xbuild
 *.o
 *.mod.c
 .tmp_versions
+hdl/buildtime.vh
