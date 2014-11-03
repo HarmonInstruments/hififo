@@ -23,7 +23,7 @@ pyhififo.o: pyhififo.cpp
 
 test: test.o $(OBJS)
 	@echo Building file: test
-	$(CC) test.o $(OBJS) -o test -lrt
+	$(CC) test.o $(OBJS) -o test -lrt -fopenmp
 	@echo ' '
 
 runtest: test
