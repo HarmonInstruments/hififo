@@ -24,7 +24,6 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "AlignedMem.h"
 #include "Sequencer.h"
 
 using namespace std;
@@ -83,11 +82,12 @@ void Sequencer::read_req(size_t count, uint32_t address)
 uint64_t * Sequencer::run()
 {
 	// generate a flush for the read FIFO
-	int increment = 64;
+	size_t increment = 16; // 128 bytes
 	size_t excess_reads = reads_expected % increment;
 	if(excess_reads != 0)
 		read_req(increment - excess_reads, 0);
 	// generate a flush for the write FIFO
+	increment = 64; // 512 bytes
 	size_t excess_writes = wcount % increment;
 	if(excess_writes != 0){
 		size_t fill_count = increment - excess_writes;
