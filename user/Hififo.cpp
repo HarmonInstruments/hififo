@@ -31,12 +31,20 @@ using namespace std;
 #define IOC_GET 0x11
 #define IOC_PUT 0x12
 #define IOC_TIMEOUT 0x13
+#define IOC_AVAILABLE 0x14
+
+size_t Hififo::get_available()
+{
+	return ioctl(fd, _IO('f', IOC_AVAILABLE), 0);
+}
 
 void * Hififo::get_buffer(size_t count)
 {
 	ssize_t rc = ioctl(fd, _IO('f', IOC_GET), count);
-	if(rc < 0)
+	if(rc < 0){
+		cerr << "timeout, " << get_available() << " bytes available\n";
 		throw std::runtime_error("hififo device get buffer timed out");
+	}
 	return &ringbuf[rc];
 }
 

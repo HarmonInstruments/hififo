@@ -33,4 +33,5 @@ public:
 	void put_buffer(size_t count);
 	void put_all();
 	void set_timeout(double timeout);
+	size_t get_available();
 };

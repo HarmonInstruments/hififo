@@ -40,6 +40,7 @@
 #define IOC_GET 0x11
 #define IOC_PUT 0x12
 #define IOC_TIMEOUT 0x13
+#define IOC_AVAILABLE 0x14
 
 #define HIFIFO_MATCH(x) ( 1 | (x))
 #define HIFIFO_STOP(x) ( 2 | (x))
@@ -113,7 +114,6 @@ static int hififo_release(struct inode *inode, struct file *filp)
 	struct hififo_fifo *fifo = filp->private_data;
 	writeqle(HIFIFO_ABORT(1), fifo->local_base);
 	udelay(100); /* allow any pending DMA to complete */
-	//hififo_wait(fifo, fifo->n_requested);
 	if(fifo->ring != NULL)
 		pci_free_consistent(fifo->pdev,
 				    fifo->ring_size,
@@ -146,7 +146,7 @@ static int hififo_open(struct inode *inode, struct file *filp)
 		goto fail;
 	writeqle(HIFIFO_ABORT(1), fifo->local_base);
 	udelay(100);
-	fifo->timeout = HZ/4;
+	hififo_set_timeout(fifo, 250); /* default of 250 ms */
 	fifo->p_hw = 0;
 	fifo->p_sw = 0;
 	fifo->bytes_available = 0;
@@ -219,6 +219,8 @@ hififo_ioctl_read (struct file *file, unsigned int command, unsigned long arg)
 		hififo_set_timeout(fifo, arg);
 		return 0;
 	}
+	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_AVAILABLE))
+		return (long) fifo->bytes_available;
 	return -ENOTTY;
 }
 
@@ -305,6 +307,8 @@ hififo_ioctl_write (struct file *file, unsigned int command, unsigned long arg)
 		hififo_set_timeout(fifo, arg);
 		return 0;
 	}
+	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_AVAILABLE))
+		return (long) fifo->bytes_available;
 	return -ENOTTY;
 }
 
