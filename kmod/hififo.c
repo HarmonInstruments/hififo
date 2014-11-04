@@ -82,6 +82,7 @@ struct hififo_fifo {
 	u64 *local_base;
 	struct pci_dev *pdev;
 	struct cdev cdev;
+	struct mutex sem;
 	u32 p_hw, p_sw;
 	u32 ring_size; // size of ring
 	u32 bytes_available;
@@ -213,21 +214,26 @@ static long
 hififo_ioctl_read (struct file *file, unsigned int command, unsigned long arg)
 {
 	struct hififo_fifo *fifo = file->private_data;
+	long status = mutex_lock_interruptible(&fifo->sem);
+        if (status)
+                return status;
+	status = -ENOTTY;
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_GET))
-		return (long) hififo_get_buffer_read(fifo, (size_t) arg);
+		status = (long) hififo_get_buffer_read(fifo, (size_t) arg);
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_PUT)){
 		hififo_put_buffer_read(fifo, (size_t) arg);
-		return 0;
+		status = 0;
 	}
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_TIMEOUT)){
 		hififo_set_timeout(fifo, arg);
-		return 0;
+		status = 0;
 	}
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_AVAILABLE))
-		return (long) fifo->bytes_available;
+		status = (long) fifo->bytes_available;
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_BUILD))
-		return (long) fifo->build;
-	return -ENOTTY;
+		status = (long) fifo->build;
+	mutex_unlock(&fifo->sem);
+	return status;
 }
 
 static ssize_t hififo_read(struct file *filp,
@@ -239,8 +245,12 @@ static ssize_t hififo_read(struct file *filp,
 	size_t max_copy = fifo->ring_size / 2;
 	size_t bytes_copied = 0;
 	size_t csize;
+	ssize_t status;
 	if((buf == NULL) || ((length & 0x7) != 0))
 		return -EINVAL;
+	status = mutex_lock_interruptible(&fifo->sem);
+        if (status)
+                return status;
 	while(bytes_copied < length){
 		csize = hififo_min(max_copy, length - bytes_copied);
 		csize = hififo_min(csize, fifo->ring_size - fifo->p_sw);
@@ -252,6 +262,7 @@ static ssize_t hififo_read(struct file *filp,
 		hififo_put_buffer_read(fifo, csize);
 		bytes_copied += csize;
 	}
+	mutex_unlock(&fifo->sem);
 	return bytes_copied;
 }
 
@@ -303,21 +314,26 @@ static long
 hififo_ioctl_write (struct file *file, unsigned int command, unsigned long arg)
 {
 	struct hififo_fifo *fifo = file->private_data;
+	long status = mutex_lock_interruptible(&fifo->sem);
+        if (status)
+                return status;
+	status = -ENOTTY;
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_GET))
-		return (long) hififo_get_buffer_write(fifo, (size_t) arg);
+		status = (long) hififo_get_buffer_write(fifo, (size_t) arg);
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_PUT)){
 		hififo_put_buffer_write(fifo, (size_t) arg);
-		return 0;
+		status = 0;
 	}
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_TIMEOUT)){
 		hififo_set_timeout(fifo, arg);
-		return 0;
+		status = 0;
 	}
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_AVAILABLE))
-		return (long) fifo->bytes_available;
+		status = (long) fifo->bytes_available;
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_BUILD))
-		return (long) fifo->build;
-	return -ENOTTY;
+		status = (long) fifo->build;
+	mutex_unlock(&fifo->sem);
+	return status;
 }
 
 static ssize_t hififo_write(struct file *filp, const char *buf, size_t length,
@@ -326,8 +342,12 @@ static ssize_t hififo_write(struct file *filp, const char *buf, size_t length,
 	struct hififo_fifo *fifo = filp->private_data;
 	size_t bytes_copied = 0, csize;
 	size_t max_copy = fifo->ring_size / 2;
+	ssize_t status;
 	if((buf == NULL) || ((length & 0x7) != 0))
 		return -EINVAL;
+	status = mutex_lock_interruptible(&fifo->sem);
+        if (status)
+                return status;
 	while(bytes_copied < length){
 		csize = hififo_min(max_copy, length - bytes_copied);
 		csize = hififo_min(csize, fifo->ring_size - fifo->p_sw);
@@ -339,35 +359,39 @@ static ssize_t hififo_write(struct file *filp, const char *buf, size_t length,
 		hififo_put_buffer_write(fifo, csize);
 		bytes_copied += csize;
 	}
+	mutex_unlock(&fifo->sem);
 	return bytes_copied;
 }
 
 static int hififo_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct hififo_fifo *fifo = file->private_data;
-	unsigned long size;
-	int rc, i;
-
+	int i;
+	ssize_t status = mutex_lock_interruptible(&fifo->sem);
+        if (status)
+                return status;
+	status = -EINVAL;
 	if (!(vma->vm_flags & VM_SHARED))
-		return -EINVAL;
+		goto out;
 	if (vma->vm_start & ~PAGE_MASK)
-		return -EINVAL;
-	size = vma->vm_end - vma->vm_start;
-	if (size != 2 * fifo->ring_size)
-		return -EINVAL;
+		goto out;
+	if ((vma->vm_end - vma->vm_start) != (2 * fifo->ring_size))
+		goto out;
 	if(fifo->ring == NULL)
-		return -EINVAL;
-
+		goto out;
 	for(i=0; i<2; i++){
-		rc = remap_pfn_range(vma,
-				     vma->vm_start + fifo->ring_size * i,
-				     fifo->ring_dma_addr >> PAGE_SHIFT,
-				     fifo->ring_size,
-				     vma->vm_page_prot);
-		if(rc)
-			return rc;
+		status = remap_pfn_range(vma,
+					 vma->vm_start + fifo->ring_size * i,
+					 fifo->ring_dma_addr >> PAGE_SHIFT,
+					 fifo->ring_size,
+					 vma->vm_page_prot);
+		if(status)
+			goto out;
 	}
-	return 0;
+	status = 0;
+out:
+	mutex_unlock(&fifo->sem);
+	return status;
 }
 
 static struct file_operations fops_tpc = {
@@ -535,6 +559,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		fifo->local_base = drvdata->pio_reg_base+8+i;
 		init_waitqueue_head(&fifo->queue);
 		fifo->build = drvdata->build;
+		mutex_init(&fifo->sem);
 	}
 	hififo_count++;
 	/* enable interrupts */
