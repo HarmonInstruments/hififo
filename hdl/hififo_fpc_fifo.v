@@ -57,9 +57,9 @@ module pcie_from_pc_fifo
 
    // write enables
    wire 	    rx_valid = pio_wvalid;
-   wire 	    write_reorder = (rc_tag[7:4] == fifo_number) && rc_valid;
+   wire 	    write_reorder = (rc_tag[5:3] == fifo_number) && rc_valid;
    wire 	    write_last = rc_valid
-		    && (rc_tag[7:4] == fifo_number) && (rc_index == 6'h3F);
+		    && (rc_tag[5:3] == fifo_number) && (rc_index == 6'h3F);
    wire [2:0] 	    n_requested = p_request - p_read[8:6];
    wire 	    request_fifo_read = 0;
 
@@ -87,7 +87,7 @@ module pcie_from_pc_fifo
          always @(posedge clock) begin
 	    if(reset)
 	      block_filled[i] <= 1'b0;
-	    else if(write_last && (rc_tag[3:0] == i))
+	    else if(write_last && (rc_tag[2:0] == i))
 	      block_filled[i] <= 1'b1;
 	    else if(p_write[2:0] == i)
 	      block_filled[i] <= 1'b0;

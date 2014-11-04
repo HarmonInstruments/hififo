@@ -26,7 +26,6 @@
 #include <stdexcept>
 
 #include "TimeIt.h"
-#include "AlignedMem.h"
 #include "Hififo.h"
 #include "Sequencer.h"
 #include "Spi_Config.h"
@@ -100,14 +99,16 @@ void checker(Hififo *f, size_t count, int use_hp)
 
 int main ( int argc, char **argv )
 {
-	uint64_t length = 1048576L*128;
+	uint64_t length = 1048576L*64;
 
 	Hififo f2{"/dev/hififo_0_2"};
 	Hififo f6{"/dev/hififo_0_6"};
 	Hififo f0{"/dev/hififo_0_0"};
 	Hififo f4{"/dev/hififo_0_4"};
 
-	Sequencer seq{"/dev/hififo_0_1", "/dev/hififo_0_5"};
+	cerr << "FPGA built on " << f0.get_fpga_build_time();
+
+ 	Sequencer seq{"/dev/hififo_0_1", "/dev/hififo_0_5"};
 
 	//uint64_t * sbuf;
 
@@ -162,7 +163,7 @@ int main ( int argc, char **argv )
 	}
 
 	std::cerr << "f2 -> f6\n";
-	std::thread t_reader (checker, &f6, 2*length, 1);
+	std::thread t_reader (checker, &f6, length, 1);
 	std::thread t_writer (writer, &f2, length, 1);
 	t_writer.join();
 	t_reader.join();
@@ -174,6 +175,6 @@ int main ( int argc, char **argv )
 
 	TimeIt timer{};
 	checker(&f4, length, 1);
-	cerr << timer.elapsed();
+	cerr << timer.elapsed() << endl;
   return 0;
 }

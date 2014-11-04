@@ -310,7 +310,7 @@ module rr_mux
    );
 
    wire [4:0] 	 rro_tag_raw;
-   assign rro_tag = {2'b0, rro_tag_raw[4:3], 1'b0, rro_tag_raw[2:0]};
+   assign rro_tag = {3'b0, rro_tag_raw};
 
    rr_mux4 #(.TAG(5), .AMIN(9)) rr_mux4_0
      (.clock(clock),

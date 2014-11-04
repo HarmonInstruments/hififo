@@ -22,6 +22,7 @@
 #include <sys/ioctl.h>
 #include <iostream>
 #include <stdexcept>
+#include <ctime>
 
 #include "Hififo.h"
 
@@ -32,6 +33,7 @@ using namespace std;
 #define IOC_PUT 0x12
 #define IOC_TIMEOUT 0x13
 #define IOC_AVAILABLE 0x14
+#define IOC_FPGABUILD 0x15
 
 size_t Hififo::get_available()
 {
@@ -59,6 +61,12 @@ void Hififo::set_timeout(double timeout)
 	unsigned long ultimeout = (unsigned long) (1000*timeout);
 	if(ioctl(fd, _IO('f', IOC_TIMEOUT), ultimeout) != 0)
 		throw std::runtime_error( "hififo set timeout failed" );
+}
+
+char * Hififo::get_fpga_build_time()
+{
+	time_t ts = (time_t) ioctl(fd, _IO('f', IOC_FPGABUILD), 0);
+	return asctime(localtime(&ts));
 }
 
 Hififo::Hififo(const char * filename)

@@ -34,4 +34,5 @@ public:
 	void put_all();
 	void set_timeout(double timeout);
 	size_t get_available();
+	char * get_fpga_build_time();
 };

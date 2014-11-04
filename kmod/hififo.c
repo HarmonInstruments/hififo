@@ -41,6 +41,7 @@
 #define IOC_PUT 0x12
 #define IOC_TIMEOUT 0x13
 #define IOC_AVAILABLE 0x14
+#define IOC_BUILD 0x15
 
 #define HIFIFO_MATCH(x) ( 1 | (x))
 #define HIFIFO_STOP(x) ( 2 | (x))
@@ -58,6 +59,7 @@ static struct pci_device_id hififo_pci_table[] = {
 
 #define REG_INTERRUPT 0
 #define REG_ID 1
+#define REG_BUILD 2
 #define REG_RESET 3
 #define REG_RESET_SET 3
 #define REG_RESET_CLEAR 4
@@ -87,6 +89,7 @@ struct hififo_fifo {
 	spinlock_t lock_open;
 	int n; /* fifo number */
 	int timeout;
+	u32 build;
 };
 
 struct hififo_dev {
@@ -95,6 +98,7 @@ struct hififo_dev {
 	int major;
 	int nfifos;
 	int idreg;
+	u32 build;
 };
 
 static inline void hififo_set_match(struct hififo_fifo *fifo, u32 matchval)
@@ -221,6 +225,8 @@ hififo_ioctl_read (struct file *file, unsigned int command, unsigned long arg)
 	}
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_AVAILABLE))
 		return (long) fifo->bytes_available;
+	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_BUILD))
+		return (long) fifo->build;
 	return -ENOTTY;
 }
 
@@ -309,6 +315,8 @@ hififo_ioctl_write (struct file *file, unsigned int command, unsigned long arg)
 	}
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_AVAILABLE))
 		return (long) fifo->bytes_available;
+	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_BUILD))
+		return (long) fifo->build;
 	return -ENOTTY;
 }
 
@@ -460,6 +468,8 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	for(i=0; i<8; i++)
 		printk("bar0[%d] = %.8x\n", i, (u32) readreg(drvdata, i));
 	drvdata->idreg = readreg(drvdata, REG_ID);
+	drvdata->build = readreg(drvdata, REG_BUILD);
+	printk(KERN_INFO DEVICE_NAME " FPGA build = 0x%.8X\n", drvdata->build);
 	drvdata->nfifos = 0;
 	for(i=0; i<MAX_FIFOS; i++){
 		if(drvdata->idreg & (1 << i))
@@ -524,6 +534,7 @@ static int hififo_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		fifo->pdev = pdev;
 		fifo->local_base = drvdata->pio_reg_base+8+i;
 		init_waitqueue_head(&fifo->queue);
+		fifo->build = drvdata->build;
 	}
 	hififo_count++;
 	/* enable interrupts */
