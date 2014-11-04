@@ -24,6 +24,8 @@ import xadc
 seq = pyhififo.PySequencer("/dev/hififo_0_1", "/dev/hififo_0_5")
 spi = pyhififo.PySpi_Config(seq, 4)
 drp_xadc = pyhififo.PyXilinx_DRP(seq, 5)
+drp_gt0 = pyhififo.PyXilinx_DRP(seq, 8)
+
 adc = xadc.XADC(drp_xadc)
 adc.read_xadc()
 flash = spiflash.SPIFlash(spi)
@@ -37,5 +39,8 @@ dc = 4
 a = flash.read(0, dc)
 for i in range(dc):
     print hex(ord(a[i]))
+
+for i in range(16):
+    print "drp_", i, drp_gt0.read(i)
 
 print "done"
