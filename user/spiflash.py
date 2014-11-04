@@ -43,7 +43,8 @@ class SPIFlash():
         if len(data) != 256:
             raise RuntimeError("page program length must be 256 bytes")
         if (address & 0xFF0000FF) != 0:
-            raise RuntimeError("page program address must be aligned to 256 bytes")
+            raise RuntimeError(
+                "page program address must be aligned to 256 bytes")
         self.write_enable()
         self.spidev.txrx(struct.pack(">I", 0x02000000 | address) + data)
         self.wait_busy()
@@ -51,7 +52,8 @@ class SPIFlash():
     def sector_erase(self, address):
         self.write_enable()
         if (address & 0xFF00FFFF) != 0:
-            raise RuntimeError("sector erase address must be aligned to 65536 bytes")
+            raise RuntimeError(
+                "sector erase address must be aligned to 65536 bytes")
         self.spidev.txrx(struct.pack(">I", 0xD8000000 | address))
         self.wait_busy()
 
@@ -68,7 +70,8 @@ class SPIFlash():
             print("writing sector {} of flash".format(i))
             for j in range(self.sector_size / self.page_size):
                 startbyte = self.sector_size*i + self.page_size*j
-                self.page_program(address + startbyte, data[startbyte:startbyte+256])
+                self.page_program(address + startbyte,
+                                  data[startbyte:startbyte+256])
             print("reading back sector {} of flash".format(i))
             rb = self.read(address + self.sector_size*i, self.sector_size)
             if rb != data[i*self.sector_size:(i+1)*self.sector_size]:
