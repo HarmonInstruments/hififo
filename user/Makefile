@@ -5,7 +5,7 @@ CCFLAGS = -c -Wall -std=gnu++11 -O3 -fPIC -fopenmp
 CC = g++
 HOST = vna
 OBJS = TimeIt.o Sequencer.o Hififo.o Spi_Config.o
-OBJS_PY = Sequencer.o Hififo.o TimeIt.o Spi_Config.o Xilinx_DRP.o pyhififo.o
+OBJS_PY = $(OBJS) Xilinx_DRP.o pyhififo.o Lvds_io.o
 
 pyhififo.cpp: pyhififo.pyx
 	@echo Building file: $<

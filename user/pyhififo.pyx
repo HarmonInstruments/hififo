@@ -12,7 +12,7 @@ cdef extern from "Sequencer.h":# namespace "":
         void write_single(uint32_t address, uint64_t data)
         void read_req(size_t count, uint32_t address)
         uint64_t * run()
-        void write(uint32_t address, uint64_t data)
+        void write(uint32_t address, uint64_t data, uint64_t count)
         uint64_t read(uint32_t address)
 
 cdef class PySequencer:
@@ -33,8 +33,8 @@ cdef class PySequencer:
     def read_req(self, size_t count, uint32_t address):
         self.thisptr.read_req(count, address)
         return
-    def write(self, uint32_t address, uint64_t data):
-        self.thisptr.write(address, data)
+    def write(self, uint32_t address, uint64_t data, uint64_t count=1000):
+        self.thisptr.write(address, data, count)
         return
     def read(self, uint32_t address):
         return self.thisptr.read(address)
@@ -87,4 +87,21 @@ cdef class PyXilinx_DRP:
     def read(self, int address):
         return self.thisptr.read(address)
     def read(self, int address, int data):
+        self.thisptr.write(address, data)
+
+cdef extern from "Lvds_io.h":
+    cdef cppclass Lvds_io:
+        Lvds_io(Sequencer * sequencer, int address) except +
+        uint32_t read(int addr)
+        void write(int addr, uint64_t data)
+
+cdef class PyLvds_io:
+    cdef Lvds_io *thisptr
+    def __cinit__(self, PySequencer sequencer, int address):
+        self.thisptr = new Lvds_io(sequencer.thisptr, address)
+    def __dealloc__(self):
+        del self.thisptr
+    def read(self, int address):
+        return self.thisptr.read(address)
+    def write(self, int address, uint64_t data):
         self.thisptr.write(address, data)

@@ -1,5 +1,4 @@
 /*
- * HIFIFO: Harmon Instruments PCI Express to FIFO
  * Copyright (C) 2014 Harmon Instruments, LLC
  *
  * This program is free software: you can redistribute it and/or modify
@@ -18,27 +17,16 @@
 
 #pragma once
 
-#include "Hififo.h"
+#include "Sequencer.h"
 
-class Sequencer {
+class Lvds_io
+{
 private:
-	Hififo * wf;
-	Hififo * rf;
-	uint64_t * wbuf;
-	uint64_t * rbuf;
-	size_t wcount;
-	size_t wptr;
-	size_t bufsize;
-	size_t reads_expected, reads_requested;
+	Sequencer *seq;
+	int base;
 public:
-	Sequencer(const char * filename_write, const char * filename_read);
-	void append(uint64_t data);
-	void wait(uint64_t count);
-	void write_req(size_t count, uint32_t address, uint64_t * data);
-	void write_single(uint32_t address, uint64_t data);
-	void read_req(size_t count, uint32_t address);
-	uint64_t * run();
-	void write (uint32_t address, uint64_t data, uint64_t count);
-	uint64_t read(uint32_t address);
+	Lvds_io(Sequencer *sequencer, int addr);
+	void write(int addr, uint64_t data);
+	uint32_t read(int addr);
+	void reset(void);
 };
-

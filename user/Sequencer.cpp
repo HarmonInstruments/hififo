@@ -69,17 +69,16 @@ void Sequencer::write_single(uint32_t address, uint64_t data)
 	write_req(1, address, &data);
 }
 
-void Sequencer::write(uint32_t address, uint64_t data)
+void Sequencer::write(uint32_t address, uint64_t data, uint64_t count)
 {
 	write_single(address, data);
-	wait(1000);
+	wait(count);
 	run();
 }
 
 uint64_t Sequencer::read(uint32_t address)
 {
 	read_req(1, address);
-	wait(1000);
 	uint64_t * rp = run();
 	return rp[0];
 }
