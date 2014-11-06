@@ -38,5 +38,7 @@ public:
 	void write_single(uint32_t address, uint64_t data);
 	void read_req(size_t count, uint32_t address);
 	uint64_t * run();
+	void write (uint32_t address, uint64_t data);
+	uint64_t read(uint32_t address);
 };
 

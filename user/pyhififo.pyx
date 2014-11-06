@@ -12,6 +12,8 @@ cdef extern from "Sequencer.h":# namespace "":
         void write_single(uint32_t address, uint64_t data)
         void read_req(size_t count, uint32_t address)
         uint64_t * run()
+        void write(uint32_t address, uint64_t data)
+        uint64_t read(uint32_t address)
 
 cdef class PySequencer:
     cdef Sequencer *thisptr      # hold a C++ instance which we're wrapping
@@ -31,6 +33,12 @@ cdef class PySequencer:
     def read_req(self, size_t count, uint32_t address):
         self.thisptr.read_req(count, address)
         return
+    def write(self, uint32_t address, uint64_t data):
+        self.thisptr.write(address, data)
+        return
+    def read(self, uint32_t address):
+        return self.thisptr.read(address)
+
 #    def run(self):
 #        return self.thisptr.run(dx, dy)
 
