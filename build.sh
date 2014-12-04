@@ -1,5 +1,5 @@
 #!/bin/bash
-source ~/software/Xilinx/Vivado/2014.3/settings64.sh
+source ~/software/Xilinx/Vivado/2014.4/settings64.sh
 ./timestamp.sh
 rm -rf xbuild/*
 vivado -source init.tcl -mode tcl
