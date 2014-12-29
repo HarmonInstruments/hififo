@@ -16,17 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/
  */
 
-#include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <thread>
 #include <iostream>
 #include <stdexcept>
 
 #include "Spi_Config.h"
-#include "Sequencer.h"
 
 using namespace std;
 
@@ -44,7 +39,7 @@ void SPI_Config::txrx(char * data, int len, int read_offset)
 		if(len != i+1)
 			d_next |= 0x100;
 		seq->write_single(spi_address, d_next);
-		seq->wait(128);
+		seq->wait(360);
 		if((read_offset >= 0) && (i >= read_offset))
 			seq->read_req(1, spi_address);
 	}
@@ -53,5 +48,6 @@ void SPI_Config::txrx(char * data, int len, int read_offset)
 	uint64_t * rdata64 = seq->run();
 	for(int i=0; i<(len-read_offset); i++)
 		data[i] = rdata64[i];
+	return;
 }
 
