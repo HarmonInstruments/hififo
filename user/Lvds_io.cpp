@@ -115,8 +115,12 @@ Lvds_io::Lvds_io(Sequencer *sequencer, int addr)
 
 void Lvds_io::write(int addr, uint64_t data)
 {
-	uint64_t wdata = (((uint64_t) addr) << 32) | data;
-	seq->write(base, wdata, RCYCLES);
+	seq->write(base + addr, data, RCYCLES);
+}
+
+void Lvds_io::write(int addr, uint64_t data, uint64_t delay)
+{
+	seq->write(base + addr, data, delay);
 }
 
 uint32_t Lvds_io::read(int addr)

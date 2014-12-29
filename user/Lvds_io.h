@@ -27,6 +27,7 @@ private:
 public:
 	Lvds_io(Sequencer *sequencer, int addr);
 	void write(int addr, uint64_t data);
+	void write(int addr, uint64_t data, uint64_t delay);
 	uint32_t read(int addr);
 	void reset(void);
 };
