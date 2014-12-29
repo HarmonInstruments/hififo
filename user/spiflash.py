@@ -31,6 +31,11 @@ class SPIFlash():
     def read_status(self):
         return ord(self.spidev.txrx("\x05", 1)[0])
 
+    def write_status(self, val):
+        self.write_enable();
+        self.spidev.txrx(struct.pack("BB", 0x01, val))
+        self.wait_busy();
+
     def wait_busy(self):
         for i in range(10000):
             status = self.read_status()
@@ -60,6 +65,7 @@ class SPIFlash():
     def write(self, address, data):
         if (address & (self.sector_size - 1)) != 0:
             raise RuntimeError("write address must be aligned to sector size")
+        self.write_status(0)
         sectors = len(data) / self.sector_size
         if len(data) != sectors*self.sector_size:
             sectors += 1
@@ -73,8 +79,11 @@ class SPIFlash():
                 self.page_program(address + startbyte,
                                   data[startbyte:startbyte+256])
             print("reading back sector {} of flash".format(i))
-            rb = self.read(address + self.sector_size*i, self.sector_size)
+            rb = self.read(address + self.sector_size*i, self.sector_size/2)
+            rb += self.read(address + self.sector_size*i + self.sector_size/2, self.sector_size/2)
             if rb != data[i*self.sector_size:(i+1)*self.sector_size]:
+                for i in range(32):
+                    print hex(ord(rb[i])), hex(ord(data[i]))
                 raise RuntimeError("SPI flash sector write failed")
         print("flash write complete")
 
