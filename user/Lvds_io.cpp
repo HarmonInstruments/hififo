@@ -91,7 +91,7 @@ static int scan_tx(Sequencer *seq, int addr)
 	bool match[NTAPS];
 	for(int i = 0; i<NTAPS; i++){
 		seq->write(addr + 1, W_TXTAP | i, WCYCLES);
-		seq->write(addr, 0x000FFF00000000 | CALVALTX, RCYCLES);
+		seq->write(addr, 0xFFFF00000000 | CALVALTX, RCYCLES);
 		uint32_t rval = seq->read(addr);
 		//cout << "tx tap " << i << " read " << rval << endl;
 		match[i] = rval == CALVALTX;
