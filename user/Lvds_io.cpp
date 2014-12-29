@@ -108,7 +108,7 @@ Lvds_io::Lvds_io(Sequencer *sequencer, int addr)
 {
 	seq = sequencer;
 	base = addr;
-	cerr << "initializing LVDS IO, addr = " << base << "\n";
+	cout << "initializing LVDS IO, addr = " << base << "\n";
 	scan_rx(seq, base);
 	scan_tx(seq, base);
 }
