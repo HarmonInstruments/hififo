@@ -34,7 +34,7 @@ SPI_Config::SPI_Config(Sequencer *sequencer, int addr)
 {
 	seq = sequencer;
 	spi_address = addr;
-	cerr << "opened SPI_Config, addr = " << addr << "\n";
+	cout << "opened SPI_Config, addr = " << addr << "\n";
 }
 
 void SPI_Config::txrx(char * data, int len, int read_offset)

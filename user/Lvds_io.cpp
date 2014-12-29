@@ -56,13 +56,13 @@ static int find_most_distant(bool * match)
 			imax = i;
 		}
 	}
-	cerr << "tap distance = " << vmax;
+	cout << "tap distance = " << vmax;
 	if(sum == 0){ // none match, probably no link
-		cerr << " no matches\n";
+		cout << " no matches\n";
 		return -1;
 	}
 	if(sum == 32){ // all match, ???
-		cerr << " all match ???\n";
+		cout << " all match ???\n";
 		return -2;
 	}
 	return imax;
@@ -75,14 +75,14 @@ static int scan_rx(Sequencer *seq, int addr)
 		seq->write(addr + 1, W_RXTAP | i, WCYCLES);
 		seq->write(addr, 0, RCYCLES);
 		uint32_t rval = seq->read(addr);
-		//cerr << "rx tap " << i << " read " << rval << endl;
+		//cout << "rx tap " << i << " read " << rval << endl;
 		match[i] = rval == CALVALRX;
 	}
 	int tap = find_most_distant(match);
 	if(tap < 0)
 		return tap;
 	seq->write(addr + 1, W_RXTAP | tap, WCYCLES);
-	cerr << ", set RX tap to " << tap << endl;
+	cout << ", set RX tap to " << tap << endl;
 	return tap;
 }
 
@@ -93,14 +93,14 @@ static int scan_tx(Sequencer *seq, int addr)
 		seq->write(addr + 1, W_TXTAP | i, WCYCLES);
 		seq->write(addr, 0x000FFF00000000 | CALVALTX, RCYCLES);
 		uint32_t rval = seq->read(addr);
-		//cerr << "tx tap " << i << " read " << rval << endl;
+		//cout << "tx tap " << i << " read " << rval << endl;
 		match[i] = rval == CALVALTX;
 	}
 	int tap = find_most_distant(match);
 	if(tap < 0)
 		return tap;
 	seq->write(addr + 1, W_TXTAP | tap, WCYCLES);
-	cerr << ", set TX tap to " << tap << endl;
+	cout << ", set TX tap to " << tap << endl;
 	return tap;
 }
 
@@ -128,7 +128,7 @@ void Lvds_io::reset(void)
 {
 	seq->write(6,1, WCYCLES + 1000);
 	seq->write(6,0, WCYCLES);
-	cerr << "reset IO delay, ready = " << seq->read(6) << endl;
+	cout << "reset IO delay, ready = " << seq->read(6) << endl;
 }
 
 
