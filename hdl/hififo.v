@@ -219,7 +219,7 @@ module hififo_pcie
 		 .fifo_ready(fifo_ready[i])
 		 );
 	   end
-	 else if(i>4)
+	 else if(i>3)
 	   begin
 	      assign mux_wr_last[i-4] = 0;
 	      assign mux_wr_data[i-4] = 0;
@@ -401,4 +401,3 @@ module hififo_pcie
       );
 
 endmodule
-
