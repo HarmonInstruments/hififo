@@ -35,27 +35,6 @@ using namespace std;
 #define IOC_AVAILABLE 0x14
 #define IOC_FPGABUILD 0x15
 
-size_t Hififo::get_available()
-{
-	return ioctl(fd, _IO('f', IOC_AVAILABLE), 0);
-}
-
-void * Hififo::get_buffer(size_t count)
-{
-	ssize_t rc = ioctl(fd, _IO('f', IOC_GET), count);
-	if(rc < 0){
-		cerr << "timeout, " << get_available() << " bytes available\n";
-		throw std::runtime_error("hififo device get buffer timed out");
-	}
-	return &ringbuf[rc];
-}
-
-void Hififo::put_buffer(size_t count)
-{
-	if(ioctl(fd, _IO('f', IOC_PUT), count) != 0)
-		throw std::runtime_error( "hififo device put ioctl failed" );
-}
-
 void Hififo::set_timeout(double timeout)
 {
 	unsigned long ultimeout = (unsigned long) (1000*timeout);
@@ -77,23 +56,11 @@ Hififo::Hififo(const char * filename)
 		cerr << "fifo_open(" << filename << ") failed\n";
 		throw std::runtime_error( "hififo open failed" );
 	}
-	ringbuf_size = 8 << 20;
-	ringbuf = (uint8_t *) mmap(NULL,
-				   ringbuf_size,
-				   PROT_READ | PROT_WRITE,
-				   MAP_SHARED,
-				   fd,
-				   0);
-        if (ringbuf == MAP_FAILED){
-		ringbuf = NULL;
-		throw std::bad_alloc();
-	}
+	set_timeout(1.0);
 }
 
 Hififo::~Hififo()
 {
-	if(ringbuf)
-		munmap(ringbuf, ringbuf_size);
 	cerr << "closing hififo\n";
 	close(fd);
 }
@@ -106,10 +73,12 @@ ssize_t Hififo::bwrite(const char *buf, size_t count)
 	return rc;
 }
 
-ssize_t Hififo::bread(char * buf, size_t count)
+ssize_t Hififo::bread(void * buf, size_t count)
 {
-	ssize_t rc = read(fd, buf, count);
-	if((size_t) rc != count)
+	ssize_t rc = read(fd, (char *) buf, count);
+	if((size_t) rc != count) {
+		std::cerr << "rc = " << rc << std::endl;
 		throw std::runtime_error( "hififo read failed" );
+	}
 	return rc;
 }

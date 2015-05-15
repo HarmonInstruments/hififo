@@ -19,26 +19,26 @@
 #pragma once
 
 #include "Hififo.h"
+#include <vector>
 
 class Sequencer {
 private:
 	Hififo * wf;
 	Hififo * rf;
-	uint64_t * wbuf;
-	uint64_t * rbuf;
-	size_t wcount;
-	size_t wptr;
-	size_t bufsize;
-	size_t reads_expected, reads_requested;
+	std::vector<uint64_t> wbufv;
+	std::vector<uint64_t> rbufv;
+    	size_t reads_expected;
 public:
 	Sequencer(const char * filename_write, const char * filename_read);
+	~Sequencer();
 	void append(uint64_t data);
 	void wait(uint64_t count);
 	void write_req(size_t count, uint32_t address, uint64_t * data);
 	void write_single(uint32_t address, uint64_t data);
 	void read_req(size_t count, uint32_t address);
-	uint64_t * run();
+	void run();
 	void write (uint32_t address, uint64_t data, uint64_t count);
 	uint64_t read(uint32_t address);
+	void read_multi(uint32_t address, void *data, uint64_t count);
+	std::vector<uint64_t> read_multi(uint32_t address, uint64_t count);
 };
-

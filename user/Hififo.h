@@ -21,18 +21,12 @@
 class Hififo {
 private:
 	int fd;
-	uint8_t *ringbuf;
-	size_t ringbuf_size;
 protected:
 public:
 	Hififo(const char * filename);
 	~Hififo();
 	ssize_t bwrite(const char *buf, size_t count);
-	ssize_t bread(char * buf, size_t count);
-	void * get_buffer(size_t count);
-	void put_buffer(size_t count);
-	void put_all();
+	ssize_t bread(void * buf, size_t count);
 	void set_timeout(double timeout);
-	size_t get_available();
 	char * get_fpga_build_time();
 };

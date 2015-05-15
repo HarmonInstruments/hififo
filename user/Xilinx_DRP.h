@@ -28,4 +28,7 @@ public:
 	Xilinx_DRP(Sequencer *sequencer, int addr);
 	void write(int addr, int data);
 	int read(int addr);
+	double xadc_temp(int channel);
+	double xadc_supply(int channel);
+	void xadc_print();
 };

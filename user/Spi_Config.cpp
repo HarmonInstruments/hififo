@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 #include "Spi_Config.h"
 
@@ -45,9 +46,8 @@ void SPI_Config::txrx(char * data, int len, int read_offset)
 	}
 	if(read_offset < 0)
 		return;
-	uint64_t * rdata64 = seq->run();
+	std::vector<uint64_t> rdata64 = seq->read_multi(0, 0);
 	for(int i=0; i<(len-read_offset); i++)
 		data[i] = rdata64[i];
 	return;
 }
-
