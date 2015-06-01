@@ -17,30 +17,29 @@
  */
 
 #include <linux/module.h>
-#include <linux/init.h>
+//#include <linux/init.h>
 #include <linux/fs.h>
 #include <linux/delay.h>
 #include <asm/uaccess.h>
 #include <linux/sysfs.h>
 #include <linux/interrupt.h>
-#include <linux/sched.h>
+//#include <linux/sched.h>
 #include <linux/cdev.h>
 #include <linux/ioctl.h>
-#include <linux/mm.h>
+//#include <linux/mm.h>
 
-#include <linux/cdev.h>
-#include <linux/clk.h>
+//#include <linux/clk.h>
 #include <linux/dma-mapping.h>
-#include <linux/io.h>
-#include <linux/ioport.h>
+//#include <linux/io.h>
+//#include <linux/ioport.h>
 #include <linux/kernel.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
-#include <linux/slab.h>
-#include <linux/string.h>
-#include <linux/sysctl.h>
-#include <linux/types.h>
+//#include <linux/slab.h>
+//#include <linux/string.h>
+//#include <linux/sysctl.h>
+//#include <linux/types.h>
 
 #define hififo_min(x,y) ((x) > (y) ? (y) : (x))
 
@@ -54,11 +53,7 @@
 #define IOC_BUILD 0x15
 
 #define REG_INTERRUPT 0
-#define REG_ID 1
 #define REG_BUILD 2
-#define REG_RESET 3
-#define REG_RESET_SET 3
-#define REG_RESET_CLEAR 4
 
 #define writelle(data, addr) (writel(cpu_to_le32(data), addr))
 #define readlle(addr) (le32_to_cpu(readl(addr)))
@@ -70,20 +65,17 @@ struct hififo_dev {
 	struct cdev cdev;
 	dev_t devt;
 	u32 *pio_reg_base;
-	int idreg;
 	u32 build;
 	int irq;
 	wait_queue_head_t queue;
 	struct mutex sem;
-	dma_addr_t ring_dma_addr;
-	u32 *local_base;
 	spinlock_t lock_open;
 	int timeout;
 };
 
 static int hififo_release(struct inode *inode, struct file *filp)
 {
-	struct hififo_dev *drvdata = filp->private_data;
+	//struct hififo_dev *drvdata = filp->private_data;
 	//hififo_set_abort(fifo, 1);
 	udelay(100); /* allow any pending DMA to complete */
 	printk(KERN_INFO DEVICE_NAME " close\n");
@@ -115,32 +107,36 @@ static long hififo_ioctl (struct file *file,
 			  unsigned long arg)
 {
 	struct hififo_dev *drvdata = file->private_data;
-	long status = mutex_lock_interruptible(&drvdata->sem);
-	int fifo;
-	int rc;
-        if (status)
-                return status;
-	status = -ENOTTY;
+	//long status = mutex_lock_interruptible(&drvdata->sem);
+	int rc = 0;
+	u32 tmp[4]; // 0: read base 1: read count 2: write base 3: write count
+	// 4: write base 5: write count 6: wait 7: spare
+        //if (status)
+        //        return status;
+	long status = -ENOTTY;
 
-	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_RUN)){
-		fifo = arg >> 28;
-		// start
-		//printk(KERN_INFO DEVICE_NAME ": preread %d\n", readreg(drvdata, fifo+8));
-		writereg(drvdata, arg, fifo+8);
-		// wait
-		//printk(KERN_INFO DEVICE_NAME ": running %d on fifo %d\n", readreg(drvdata, fifo+8), fifo);
-		if(fifo != 0) {
-			rc = wait_event_interruptible_timeout(drvdata->queue,
-							      readreg(drvdata, fifo+8) == 0,
-							      drvdata->timeout);
-			if(rc < 1) {
-				printk(KERN_INFO DEVICE_NAME ": R8 %d\n", readreg(drvdata, 8));
-				printk(KERN_INFO DEVICE_NAME ": R9 %d\n", readreg(drvdata, 9));
-				printk(KERN_INFO DEVICE_NAME ": timeout on FIFO %d\n", fifo);
-				status = -ETIME;
-			}
-		}
+	if(command == _IOWR(HIFIFO_IOC_MAGIC, IOC_RUN, sizeof(tmp))){
 		status = 0;
+		if(copy_from_user(tmp, (void *) arg, sizeof(tmp)) != 0)
+			return -EFAULT;
+		if(tmp[0] != 0)
+			writereg(drvdata, tmp[0], 2);
+		if(tmp[1] != 0)
+			writereg(drvdata, tmp[1], 3);
+		if(tmp[3] != 0) {
+			rc = wait_event_interruptible_timeout(
+				drvdata->queue,
+				(readreg(drvdata, 1) == 0),
+				drvdata->timeout);
+			if(rc < 1)
+				status = -ETIME;
+		}
+		tmp[0] = readreg(drvdata, 2);
+		tmp[1] = readreg(drvdata, 3);
+		tmp[2] = 0;
+		tmp[3] = rc;
+		if(copy_to_user((void *) arg, tmp, sizeof(tmp)) != 0)
+			return -EFAULT;
 	}
 
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_TIMEOUT)){
@@ -150,7 +146,7 @@ static long hififo_ioctl (struct file *file,
 	}
 	if(command == _IO(HIFIFO_IOC_MAGIC, IOC_BUILD))
 		status = (long) drvdata->build;
-	mutex_unlock(&drvdata->sem);
+	//mutex_unlock(&drvdata->sem);
 	return status;
 }
 
@@ -164,19 +160,10 @@ static struct file_operations fops_fpc = {
 static irqreturn_t hififo_interrupt(int irq, void *data)
 {
 	struct hififo_dev *drvdata = data;
-	readreg(drvdata, REG_INTERRUPT);
-	//printk(KERN_INFO DEVICE_NAME " interrupt: sr = %x\n", sr);
+	readreg(drvdata, REG_INTERRUPT); /* clear the interrupt */
+	//printk(KERN_INFO DEVICE_NAME " interrupt\n");
 	wake_up_all(&drvdata->queue);
-	/*for(i=0; i<8; i++){
-		if(!(sr & (1<<i)))
-			continue;
-		if(drvdata->fifo[i] == NULL)
-			continue;
-
-			}*/
 	return IRQ_HANDLED;
-	//spin_lock(&drvdata->lock);
-	//spin_unlock(&drvdata->lock);
 }
 
 static int hififo_probe(struct platform_device *pdev)
@@ -218,16 +205,11 @@ static int hififo_probe(struct platform_device *pdev)
 	dev_info(&pdev->dev, "ioremap %pa to %p\n",
 		 &res->start, drvdata->pio_reg_base);
 
-	for(i=0; i<16; i++)
+	for(i=0; i<8; i++)
 		printk("bar0[%d] = %.8x\n", i, (u32) readreg(drvdata, i));
 
-	drvdata->idreg = readreg(drvdata, REG_ID);
 	drvdata->build = readreg(drvdata, REG_BUILD);
 	printk(KERN_INFO DEVICE_NAME " FPGA build = 0x%.8X\n", drvdata->build);
-	/* reset it */
-	writereg(drvdata, 0xFFFF, REG_RESET_SET);
-	udelay(10); /* wait for completion of anything that was running */
-	writereg(drvdata, 0xFFFF, REG_RESET_CLEAR);
 
 	rc = alloc_chrdev_region(&devt, 0, 1, DRIVER_NAME);
 	if (rc < 0) {
@@ -240,7 +222,6 @@ static int hififo_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to create class\n");
 		goto fail6;
 	}
-	printk(KERN_INFO DEVICE_NAME " idreg = 0x%.8X\n", drvdata->idreg);
 	cdev_init(&drvdata->cdev, &fops_fpc); /* returns void */
 	drvdata->cdev.ops = &fops_fpc;
 	drvdata->cdev.owner = THIS_MODULE;
@@ -272,7 +253,6 @@ static int hififo_remove(struct platform_device *pdev){
 	struct hififo_dev *drvdata = platform_get_drvdata(pdev);
 	if (!drvdata)
 		return -ENODEV;
-	writereg(drvdata, 0xFF, REG_RESET_SET);
 	unregister_chrdev_region(drvdata->devt, 1);
 	device_destroy(drvdata->class, drvdata->devt);
 	class_destroy(drvdata->class);
